@@ -2,7 +2,7 @@
 
 ## 当前版本
 
-- 版本：0.8.0，versionCode 8。
+- 版本：0.8.1，versionCode 9；本版更新应用图标，功能代码沿用 0.8.0。
 - Android 8.0（API 26）及以上；compileSdk / targetSdk 为 36。
 - 包名：`app.shiguang.mobile`。
 - 发布 APK 与此前 0.6.0、0.7.0 使用相同签名，可保留数据覆盖安装。

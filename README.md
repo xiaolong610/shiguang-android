@@ -1,12 +1,18 @@
 # 拾光 Android
 
-一个独立实现的多源影视、动画、漫画和小说客户端。当前版本 **0.8.0 收藏与翻页版**，最低支持 Android 8.0（API 26）。
+一个独立实现的多源影视、动画、漫画和小说客户端。当前版本 **0.8.1 拾光精灵图标版**，最低支持 Android 8.0（API 26）。
+
+<img src="docs/branding/shiguang-fairy-master.png" width="112" alt="拾光精灵图标">
 
 **[下载安卓安装包](https://github.com/xiaolong610/shiguang-android/releases/latest)** · [查看页面截图](docs/screenshots/README.md) · [源码构建与验证](docs/BUILD.md) · [第三方说明](THIRD_PARTY_NOTICES.md)
 
-在 Releases 下载 `shiguang-0.8.0.apk`，传到安卓手机安装即可。已安装旧版可直接覆盖，无需卸载。手机需登录有仓库访问权限的 GitHub 账号才能下载私有仓库附件。
+在 Releases 下载 `shiguang-0.8.1.apk`，传到安卓手机安装即可。已安装旧版可直接覆盖，无需卸载。若仓库为私有，手机需登录有访问权限的 GitHub 账号才能下载附件。
 
-规则导入：在 Releases 下载 `rules-tested-11.json`（推荐）或 `rules-all-263.json`（完整目录），在 App 中选择“内容源 → ＋ → 文件 → 从文件选择”。完整目录不代表所有站点目前都能使用。规则文件仍为 0.6.0 分类规则版本，兼容 App 0.8.0。
+规则导入：在 Releases 下载 `rules-tested-11.json`（推荐）或 `rules-all-263.json`（完整目录），在 App 中选择“内容源 → ＋ → 文件 → 从文件选择”。完整目录不代表所有站点目前都能使用。规则文件仍为 0.6.0 分类规则版本，兼容 App 0.8.1。
+
+## 0.8.1：拾光精灵图标
+
+采用用户选定的二次元精灵少女头像，提供 Android 自适应图标和圆形图标。所选原稿保留于 [图标资料](docs/branding/README.md)，本版沿用原有包名和签名，可以覆盖升级。
 
 ## 0.8.0：收藏状态、阅读翻页和详情排序
 
@@ -43,7 +49,7 @@
 
 ## 安装和使用
 
-1. 从 [Releases](https://github.com/xiaolong610/shiguang-android/releases/latest) 下载 `shiguang-0.8.0.apk`，传到安卓手机并覆盖安装。它使用与前版相同的本地调试签名，适合个人安装验证。
+1. 从 [Releases](https://github.com/xiaolong610/shiguang-android/releases/latest) 下载 `shiguang-0.8.1.apk`，传到安卓手机并覆盖安装。它使用与前版相同的本地调试签名，适合个人安装验证。
 2. 首次打开可进入小说/漫画，测试离线阅读、收藏和续读。
 3. 主页“＋”→打开视频链接，可粘贴自己的视频直链；“＋”也可导入本地小说。
 4. 内容源右上角“＋”，选择文件、订阅链接或粘贴规则；分类下拉可筛选影视、动画、漫画和小说。
