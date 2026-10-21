@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1000" viewBox="0 0 720 1000">
+<rect width="720" height="1000" fill="#f5ecd9"/>
+<text x="42" y="48" font-size="16" fill="#64746b" font-family="sans-serif">月亮便利店 / 02</text>
+<rect x="32" y="80" width="656" height="382" rx="8" fill="#e4c48b"/>
+<path d="M32 360h656v102H32z" fill="#9b7758"/>
+<rect x="60" y="118" width="170" height="212" fill="#738974"/>
+<path d="M76 155h138M76 206h138M76 260h138" stroke="#e5cfa0" stroke-width="12"/>
+<circle cx="398" cy="247" r="38" fill="#cba47d"/>
+<path d="M357 243q-5 -72 49 -61 50 0 33 65l-15 -22 -62 6z" fill="#3b5144"/>
+<path d="M345 293q55 -38 109 0l18 81H330z" fill="#5b7b69"/>
+<rect x="492" y="324" width="141" height="84" rx="8" fill="#f5e3bd"/>
+<path d="M505 337l58 36 57 -36" fill="none" stroke="#b69b6f" stroke-width="3"/>
+<rect x="269" y="105" width="360" height="66" rx="25" fill="#fcf5df"/>
+<text x="296" y="147" font-size="23" fill="#3b5144" font-family="sans-serif">这封信，要寄给谁？</text>
+<rect x="32" y="482" width="656" height="380" rx="8" fill="#314a49"/>
+<rect x="411" y="513" width="242" height="260" fill="#ead09b"/>
+<path d="M530 513v260M411 640h242" stroke="#9a8b67" stroke-width="8"/>
+<circle cx="227" cy="654" r="35" fill="#d3b795"/>
+<path d="M191 651q-13 -68 37 -58 51 3 37 66l-19 -22h-49z" fill="#1a2f34"/>
+<path d="M184 696q45 -28 90 0l20 112H165z" fill="#b58c67"/>
+<rect x="86" y="522" width="282" height="65" rx="24" fill="#fcf5df"/>
+<text x="115" y="564" font-size="22" fill="#3b5144" font-family="sans-serif">给明天的我。</text>
+<text x="42" y="930" font-size="21" fill="#4c6055" font-family="sans-serif">店员没有再问，递过来一杯热茶。</text>
+</svg>

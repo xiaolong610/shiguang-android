@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1000" viewBox="0 0 720 1000">
+<rect width="720" height="1000" fill="#f5ecd9"/>
+<text x="42" y="58" font-size="16" fill="#64746b" font-family="sans-serif">SHIGUANG ORIGINAL / 01</text>
+<text x="42" y="114" font-size="40" fill="#263b37" font-family="sans-serif">月亮便利店</text>
+<rect x="32" y="148" width="656" height="510" rx="8" fill="#223c42"/>
+<circle cx="570" cy="230" r="43" fill="#f4d59b"/>
+<path d="M32 478h656v180H32z" fill="#375351"/>
+<path d="M80 346h462v245H80z" fill="#708b79"/>
+<path d="M65 320h492v48H65z" fill="#e6d7af"/>
+<path d="M112 385h259v153H112z" fill="#eec987"/>
+<path d="M389 385h111v206H389z" fill="#d3b07b"/>
+<path d="M124 397h235v127H124z" fill="#d1bd83"/>
+<path d="M139 418h204M139 454h204M139 490h204" stroke="#897b5b" stroke-width="8"/>
+<rect x="402" y="399" width="84" height="142" fill="#e9d7a4"/>
+<text x="132" y="352" font-size="22" fill="#355446" font-family="sans-serif">月 亮 便 利 店</text>
+<ellipse cx="585" cy="605" rx="33" ry="12" fill="#1a3033"/>
+<circle cx="584" cy="506" r="19" fill="#d3b795"/>
+<path d="M564 531q21 -16 41 0l9 51h-60z" fill="#b58c67"/>
+<path d="M569 579l-5 27M600 579l8 27" stroke="#182d32" stroke-width="12"/>
+<rect x="32" y="680" width="656" height="220" rx="8" fill="#dfdcc1"/>
+<rect x="76" y="728" width="350" height="132" rx="5" fill="#f4e5bd" transform="rotate(-8 250 790)"/>
+<path d="M100 735l151 77 153 -91" fill="none" stroke="#c3b184" stroke-width="3"/>
+<path d="M534 716q-70 0 -70 55v70h137v-70q0 -55 -67 -55" fill="#aa8767"/>
+<text x="448" y="884" font-size="17" fill="#4f6154" font-family="sans-serif">一封没有地址的信。</text>
+<text x="42" y="955" font-size="21" fill="#4c6055" font-family="sans-serif">夜里十一点，街上只剩这一盏灯。</text>
+</svg>

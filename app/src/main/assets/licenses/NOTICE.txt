@@ -1,0 +1,19 @@
+Shiguang 0.6.0 ebook import components
+
+libmobi 0.12, copyright Bartek Fabiszewski and contributors.
+Source: https://github.com/bfabiszewski/libmobi
+Snapshot: 906274205c11944b628da1c553b255acb1af7c55
+License: LGPL version 3 or later. See libmobi-LGPL-3.0.txt and GNU-GPL-3.0.txt.
+The original library is built as a separate shared libmobi.so. Its complete source
+and the JNI bridge/build configuration are included in the Shiguang 0.6.0 source
+archive under third_party/libmobi and app/src/main/cpp. It may be modified,
+recompiled and relinked by rebuilding the supplied Android project. Encryption
+support is disabled; Shiguang rejects DRM-protected books.
+
+PdfBox-Android 2.0.27.0, Tom Roush and contributors; based on Apache PDFBox.
+Source: https://github.com/TomRoush/PdfBox-Android
+License: Apache License 2.0. See Apache-2.0.txt. Original upstream notices remain
+in the dependency archive. The component extracts an existing PDF text layer;
+it does not perform OCR or send documents to a remote service.
+
+Existing dependencies retain their respective original licenses and notices.

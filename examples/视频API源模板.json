@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "name": "我的视频接口（请替换地址）",
+      "kind": "video",
+      "engine": "maccms",
+      "url": "https://example.com/api.php/provide/vod/"
+    }
+  ]
+}

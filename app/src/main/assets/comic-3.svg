@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1000" viewBox="0 0 720 1000">
+<rect width="720" height="1000" fill="#f5ecd9"/>
+<text x="42" y="48" font-size="16" fill="#64746b" font-family="sans-serif">月亮便利店 / 03</text>
+<rect x="32" y="80" width="656" height="270" rx="8" fill="#c4aa7b"/>
+<rect x="107" y="115" width="504" height="207" rx="5" fill="#f8edcf" transform="rotate(3 360 220)"/>
+<text x="147" y="174" font-size="23" fill="#64746b" font-family="sans-serif">明天的我：</text>
+<text x="147" y="221" font-size="23" fill="#64746b" font-family="sans-serif">记得好好吃饭。</text>
+<text x="147" y="268" font-size="23" fill="#64746b" font-family="sans-serif">今晚，已经有人为你留灯。</text>
+<rect x="32" y="370" width="656" height="433" rx="8" fill="#263e44"/>
+<circle cx="573" cy="451" r="42" fill="#efdaaa"/>
+<path d="M32 662h656v141H32z" fill="#3d5752"/>
+<rect x="77" y="547" width="333" height="201" fill="#758b78"/>
+<rect x="66" y="520" width="359" height="39" fill="#e2d2a6"/>
+<rect x="102" y="583" width="176" height="117" fill="#eec987"/>
+<rect x="298" y="583" width="88" height="165" fill="#d8b579"/>
+<path d="M342 583v165M102 641h176" stroke="#a38c60" stroke-width="5"/>
+<circle cx="516" cy="652" r="18" fill="#d3b795"/>
+<path d="M498 678q19 -14 37 0l12 47h-58z" fill="#b58c67"/>
+<path d="M502 723l-12 36M533 723l16 36" stroke="#172d32" stroke-width="11"/>
+<path d="M485 689l-21 23" stroke="#b58c67" stroke-width="10"/>
+<rect x="447" y="700" width="25" height="20" fill="#eedbb4"/>
+<text x="79" y="548" font-size="17" fill="#355446" font-family="sans-serif">月 亮 便 利 店</text>
+<text x="42" y="870" font-size="24" fill="#3b5144" font-family="sans-serif">她走出去。动作很快。</text>
+<text x="42" y="911" font-size="24" fill="#3b5144" font-family="sans-serif">在门口，才停下来望了一会儿月亮。</text>
+<text x="42" y="968" font-size="16" fill="#899183" font-family="sans-serif">END / 今晚也有光</text>
+</svg>

@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "name": "我的小说站",
+      "kind": "novel",
+      "engine": "html",
+      "url": "https://example.com/",
+      "rules": {
+        "searchUrl": "/search?q={query}",
+        "list": ".book-item",
+        "title": "a.title",
+        "link": "a.title",
+        "cover": "img",
+        "chapters": ".chapter-list a",
+        "content": "#content",
+        "description": ".intro",
+        "headers": {}
+      }
+    },
+    {
+      "name": "我的漫画站",
+      "kind": "comic",
+      "engine": "html",
+      "url": "https://example.com/",
+      "rules": {
+        "searchUrl": "/search?q={query}",
+        "list": ".comic-item",
+        "title": "a.title",
+        "link": "a.title",
+        "cover": "img",
+        "chapters": ".chapter-list a",
+        "images": ".reader img",
+        "imageAttr": "data-src"
+      }
+    }
+  ]
+}
