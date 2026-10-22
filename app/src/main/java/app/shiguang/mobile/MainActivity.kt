@@ -129,8 +129,8 @@ class MainActivity: ComponentActivity() {
                     reader!=null -> {
                         val r=reader!!;ComicReaderScreen(model,r.first,r.second,r.third,onBack={reader=null;model.refreshLibrary()})
                     }
-                    selected?.kind==Kind.NOVEL -> NovelDetailScreen(model,selected!!,onBack={selected=null},onRead={d,l,c->openListening=false;reader=Triple(d,l,c)},onListen={d,l,c->openListening=true;reader=Triple(d,l,c)})
-                    selected!=null -> DetailScreen(model,selected!!,onBack={selected=null},onRead={d,l,c->reader=Triple(d,l,c)})
+                    selected?.kind==Kind.NOVEL -> NovelDetailScreen(model,selected!!,onBack={selected=null},onRead={d,l,c->openListening=false;reader=Triple(d,l,c)},onListen={d,l,c->openListening=true;reader=Triple(d,l,c)},onSwitched={selected=it})
+                    selected!=null -> DetailScreen(model,selected!!,onBack={selected=null},onRead={d,l,c->reader=Triple(d,l,c)},onSwitched={selected=it})
                     else -> browseState.SaveableStateProvider(tab){when(tab){
                         0->CompactDiscoverScreen(model,onOpen={selected=it.copy(category=model.entryCategory(it))},onAddRules={tab=2;importing=true},onDirect={direct=true})
                         1->CompactLibraryScreen(model,onOpen={selected=it.copy(category=model.entryCategory(it))})
@@ -174,7 +174,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
     }
 }
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun DetailScreen(model: AppModel,e: Entry,onBack:()->Unit,onRead:(Detail,Int,Int)->Unit) {
+@Composable internal fun DetailScreen(model: AppModel,e: Entry,onBack:()->Unit,onRead:(Detail,Int,Int)->Unit,onSwitched:(Entry)->Unit={}) {
     var detail by remember(e.key) {mutableStateOf<Detail?>(null)}
     var failure by remember(e.key) {mutableStateOf<String?>(null)}
     var retry by remember {mutableIntStateOf(0)}
@@ -191,6 +191,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
             val loaded=model.repo.detail(source,e)
             lineIndex=(model.history.find{it.entry.key==e.key}?.line ?: JSONObject(source.rules).optInt("preferredLine",0)).coerceIn(loaded.lines.indices)
             detail=loaded
+            model.recordDetail(loaded,lineIndex)
         }
         catch(t:CancellationException){throw t}catch(t:Exception){failure=ContentRepository.friendlyError(t)}
     }
@@ -201,13 +202,14 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
         scope.launch {
             try {
                 val chapter=d.lines[l].chapters[c]
+                val playSource=model.source(d.entry.sourceId)?:error("目标内容源已移除")
                 val url=chapter.url
-                val progress=model.store.progress().find{it.entry.key==e.key && it.line==l && it.chapter==c}
+                val progress=model.store.progressFor(d.entry.key)?.takeIf{it.line==l&&it.chapter==c}
                 val intent=Intent(context,PlayerActivity::class.java).putExtra("entry",d.entry.json().toString()).putExtra("url",url)
                     .putExtra("line",l).putExtra("chapter",c).putExtra("offset",progress?.offset ?: 0L)
-                    .putExtra("headers",JSONObject(model.repo.headers(source!!)).toString()).putExtra("original",chapter.url)
-                    .apply{if(source.engine in setOf("html","kazumi","maccms"))putExtra("source",source.json().toString())}
-                    .putExtra("knownAdSource",JSONObject(source.rules).optBoolean("knownAds"))
+                    .putExtra("headers",JSONObject(model.repo.headers(playSource)).toString()).putExtra("original",chapter.url)
+                    .apply{if(playSource.engine in setOf("html","kazumi","maccms","ficket"))putExtra("source",playSource.json().toString())}
+                    .putExtra("knownAdSource",JSONObject(playSource.rules).optBoolean("knownAds"))
                     .putExtra("playlist",JSONArray().apply { d.lines[l].chapters.forEach {put(JSONObject().put("title",it.title).put("url",it.url))} }.toString())
                 context.startActivity(intent)
             }catch(t:CancellationException){throw t}catch(t:Exception){failure=ContentRepository.friendlyError(t)}finally{busy=false}
@@ -215,7 +217,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
     }
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title={Text("内容详情",fontSize=16.sp)},navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回")}},
-            actions={FavoriteButton(model.favorites.any{it.key==e.key}){model.favorite(detail?.entry ?: e)}})
+            actions={FavoriteButton(model.favorites.any{it.key==e.key}){model.favorite(detail?.entry ?: e,detail)}})
         LazyColumn(contentPadding=PaddingValues(24.dp,0.dp,24.dp,28.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             item {Row(horizontalArrangement=Arrangement.spacedBy(20.dp)) {
                 Cover(e,Modifier.width(120.dp).height(164.dp))
@@ -223,6 +225,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
                     Spacer(Modifier.height(12.dp));Text(source?.name ?: "源已移除",color=Muted,fontSize=12.sp);Text(e.subtitle,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))}
             }}
             item {Text((detail?.entry?.description ?: e.description).ifBlank {"此源暂无内容简介"},color=Muted,fontSize=14.sp,lineHeight=23.sp)}
+            item {SourceSwitchButton(model,e,detail,onSwitched,onContinue={start(it.detail,it.line,it.chapter)})}
             if(failure!=null) item {Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF0DF))) {Column(Modifier.padding(16.dp)) {
                 Text(failure!!,fontSize=13.sp);Row {TextButton(onClick={retry++}){Text("重新加载")};
                     if(ContentRepository.isHttp(e.url)) TextButton(onClick={openBrowser(context,e.url)}) {Text("浏览器打开")}}

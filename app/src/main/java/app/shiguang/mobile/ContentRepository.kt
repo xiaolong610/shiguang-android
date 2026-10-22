@@ -71,7 +71,7 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
         val selected=sources.filter { it.enabled && it.kind==kind }
         val semaphore=Semaphore(3)
         val results=selected.map { s -> async {
-            semaphore.withPermit { runCatching { searchOne(s,query) }.fold({ it to null },{ emptyList<Entry>() to "${s.name}：${friendlyError(it)}" }) }
+            semaphore.withPermit { try{searchOne(s,query) to null}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){emptyList<Entry>() to "${s.name}：${friendlyError(e)}"} }
         } }.awaitAll()
         SearchReport(results.flatMap { it.first }.distinctBy { it.key },results.mapNotNull { it.second },selected.size)
     }
@@ -120,6 +120,8 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
             Detail(e.copy(description=description),listOf(Line("章节",if(r.optBoolean("reverseChapters")) chapters.reversed() else chapters)))
         }
     }
+    suspend fun readingPage(s:Source,e:Entry,chapter:Chapter,force:Boolean=false):PageContent = ReadingPageCache.shared.load(
+        SourceCodec.stableId(s.json().toString()+"|"+e.key+"|"+chapter.url),force){page(s,e,chapter)}
     suspend fun page(s: Source,e: Entry,chapter: Chapter): PageContent {
         if(s.engine=="local")return withContext(Dispatchers.IO){LocalNovels(appContext?:error("无法打开本地书籍")).page(e,chapter)}
         if(s.engine=="demo") return Demo.page(e,chapter)

@@ -6,18 +6,24 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONObject
 
-class LibraryStore(context: Context): SQLiteOpenHelper(context,"shiguang.db",null,2) {
+class LibraryStore(context: Context,databaseName:String="shiguang.db"): SQLiteOpenHelper(context,databaseName,null,3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE sources (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         db.execSQL("CREATE TABLE favorites (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated INTEGER NOT NULL)")
-        db.execSQL("CREATE TABLE progress (id TEXT PRIMARY KEY, payload TEXT NOT NULL, line INTEGER NOT NULL, chapter INTEGER NOT NULL, offset INTEGER NOT NULL, updated INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE progress (id TEXT PRIMARY KEY, payload TEXT NOT NULL, line INTEGER NOT NULL, chapter INTEGER NOT NULL, offset INTEGER NOT NULL, updated INTEGER NOT NULL, chapter_title TEXT NOT NULL DEFAULT '')")
         createSubscriptions(db)
+        createFollows(db)
     }
     private fun createSubscriptions(db:SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS subscription_sources (subscription_id TEXT NOT NULL, source_id TEXT NOT NULL, baseline TEXT NOT NULL, removed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(subscription_id,source_id))")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {if(oldVersion<2)createSubscriptions(db)}
+    private fun createFollows(db:SQLiteDatabase){db.execSQL("CREATE TABLE IF NOT EXISTS follow_updates (id TEXT PRIMARY KEY,payload TEXT NOT NULL)")}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {if(oldVersion<2)createSubscriptions(db);if(oldVersion<3){db.execSQL("ALTER TABLE progress ADD COLUMN chapter_title TEXT NOT NULL DEFAULT ''");createFollows(db)}}
+    fun followStates():Map<String,FollowState> = readableDatabase.rawQuery("SELECT payload FROM follow_updates",null).use{c->buildMap{while(c.moveToNext())runCatching{FollowState.parse(JSONObject(c.getString(0)))}.getOrNull()?.let{put(it.entryKey,it)}}}
+    fun followState(key:String):FollowState? = readableDatabase.rawQuery("SELECT payload FROM follow_updates WHERE id=?",arrayOf(key)).use{c->if(c.moveToFirst())FollowState.parse(JSONObject(c.getString(0)))else null}
+    fun putFollowState(state:FollowState){writableDatabase.insertWithOnConflict("follow_updates",null,ContentValues().apply{put("id",state.entryKey);put("payload",state.json().toString())},SQLiteDatabase.CONFLICT_REPLACE)}
+    fun observeDetail(detail:Detail,line:Int=0){if(detail.lines.isNotEmpty()&&favorites().any{it.key==detail.entry.key})transaction{val old=followState(detail.entry.key);val selected=detail.lines.indexOfFirst{it.name==old?.lineName}.takeIf{it>=0}?:line;putFollowState(FollowState.observe(old,detail,selected,System.currentTimeMillis()))}}
     fun sources(): List<Source> = readableDatabase.rawQuery("SELECT payload FROM sources ORDER BY rowid",null).use { c ->
         buildList { while(c.moveToNext()) runCatching { SourceCodec.parse(c.getString(0)).first() }.getOrNull()?.let { add(it) } }
     }
@@ -44,15 +50,17 @@ class LibraryStore(context: Context): SQLiteOpenHelper(context,"shiguang.db",nul
         }
     }
     fun favorite(e: Entry, add: Boolean) {
-        if(!add) { writableDatabase.delete("favorites","id=?",arrayOf(e.key));return }
+        if(!add) { transaction{writableDatabase.delete("favorites","id=?",arrayOf(e.key));writableDatabase.delete("follow_updates","id=?",arrayOf(e.key))};return }
         writableDatabase.insertWithOnConflict("favorites",null,ContentValues().apply { put("id",e.key);put("payload",e.json().toString());put("updated",System.currentTimeMillis()) },SQLiteDatabase.CONFLICT_REPLACE)
     }
-    fun progress(): List<Progress> = readableDatabase.rawQuery("SELECT payload,line,chapter,offset,updated FROM progress ORDER BY updated DESC LIMIT 50",null).use { c ->
-        buildList { while(c.moveToNext()) runCatching { Progress(Entry.parse(JSONObject(c.getString(0))),c.getInt(1),c.getInt(2),c.getLong(3),c.getLong(4)) }.getOrNull()?.let { add(it) } }
+    fun progress(): List<Progress> = readableDatabase.rawQuery("SELECT payload,line,chapter,offset,updated,chapter_title FROM progress ORDER BY updated DESC",null).use { c ->
+        buildList { while(c.moveToNext()) runCatching { Progress(Entry.parse(JSONObject(c.getString(0))),c.getInt(1),c.getInt(2),c.getLong(3),c.getLong(4),c.getString(5)) }.getOrNull()?.let { add(it) } }
     }
-    fun save(e: Entry,line: Int,chapter: Int,offset: Long) {
+    fun progressFor(key:String):Progress? = readableDatabase.rawQuery("SELECT payload,line,chapter,offset,updated,chapter_title FROM progress WHERE id=?",arrayOf(key)).use{c->if(c.moveToFirst())Progress(Entry.parse(JSONObject(c.getString(0))),c.getInt(1),c.getInt(2),c.getLong(3),c.getLong(4),c.getString(5))else null}
+    fun save(e: Entry,line: Int,chapter: Int,offset: Long,chapterTitle:String?=null) {
+        val title=chapterTitle?:progressFor(e.key)?.takeIf{it.line==line&&it.chapter==chapter}?.chapterTitle.orEmpty()
         writableDatabase.insertWithOnConflict("progress",null,ContentValues().apply {
-            put("id",e.key);put("payload",e.json().toString());put("line",line);put("chapter",chapter);put("offset",offset.coerceAtLeast(0));put("updated",System.currentTimeMillis())
+            put("id",e.key);put("payload",e.json().toString());put("line",line);put("chapter",chapter);put("offset",offset.coerceAtLeast(0));put("updated",System.currentTimeMillis());put("chapter_title",title)
         },SQLiteDatabase.CONFLICT_REPLACE)
     }
 }

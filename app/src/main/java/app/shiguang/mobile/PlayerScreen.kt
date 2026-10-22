@@ -28,9 +28,9 @@ internal fun episodeOrder(size:Int,reversed:Boolean):List<Int> = (0 until size).
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun CompactPlayerScreen(info:PlaybackInfo,player:Player?,landscape:Boolean,inPip:Boolean,background:Boolean,autoPip:Boolean,connectionError:String?,onBack:()->Unit,onPip:()->Unit,onFullscreen:()->Unit,onPick:(Int)->Unit,onFilter:()->Unit,onRetry:()->Unit,onBrowser:()->Unit,onStop:()->Unit,onBackground:(Boolean)->Unit,onAutoPip:(Boolean)->Unit){
+@Composable internal fun CompactPlayerScreen(info:PlaybackInfo,player:Player?,landscape:Boolean,inPip:Boolean,background:Boolean,autoPip:Boolean,connectionError:String?,onBack:()->Unit,onPip:()->Unit,onFullscreen:()->Unit,onPick:(Int)->Unit,onFilter:()->Unit,onRetry:()->Unit,onBrowser:()->Unit,onStop:()->Unit,onBackground:(Boolean)->Unit,onAutoPip:(Boolean)->Unit,onBoost:(Boolean)->Unit={},onSources:()->Unit={}){
     val context=LocalContext.current;val prefs=remember{context.getSharedPreferences("player",0)}
-    var settings by rememberSaveable{mutableStateOf(false)};var reverse by rememberSaveable{mutableStateOf(prefs.getBoolean("episodeReverse",false))};var speed by remember{mutableFloatStateOf(prefs.getFloat("speed",1f))};var controls by remember{mutableStateOf(true)}
+    var settings by rememberSaveable{mutableStateOf(false)};var reverse by rememberSaveable{mutableStateOf(prefs.getBoolean("episodeReverse",false))};val speed=info.speed;var controls by remember{mutableStateOf(true)}
     LaunchedEffect(inPip){if(inPip)settings=false}
     val fullscreen=landscape||inPip
     Column(Modifier.fillMaxSize().background(if(fullscreen)Color.Black else MaterialTheme.colorScheme.background).then(if(inPip)Modifier else Modifier.safeDrawingPadding())){
@@ -38,7 +38,9 @@ internal fun episodeOrder(size:Int,reversed:Boolean):List<Int> = (0 until size).
         val videoModifier=if(fullscreen)Modifier.fillMaxWidth().weight(1f)else Modifier.fillMaxWidth().aspectRatio(16f/9f)
         Box(videoModifier.background(Color.Black)){
             if(player==null)CircularProgressIndicator(Modifier.align(Alignment.Center))
-            else AndroidView(factory={PlayerView(it).apply{this.player=player;setShowSubtitleButton(true);setControllerVisibilityListener(PlayerView.ControllerVisibilityListener{visibility->controls=visibility==View.VISIBLE})}},update={it.player=player;it.useController=!inPip},onRelease={it.player=null},modifier=Modifier.fillMaxSize())
+            else AndroidView(factory={GesturePlayerView(it).apply{this.player=player;setShowSubtitleButton(true);setControllerVisibilityListener(PlayerView.ControllerVisibilityListener{visibility->controls=visibility==View.VISIBLE})}},update={it.player=player;it.useController=!inPip;it.gesturesEnabled=!inPip;it.onBoost=onBoost},onRelease={it.releaseBoost();it.player=null},modifier=Modifier.fillMaxSize())
+            if(info.boosting&&!inPip)Text("长按 ${info.speed}× · 松手恢复",color=Color.White,fontSize=13.sp,modifier=Modifier.align(Alignment.Center).background(Color.Black.copy(alpha=.55f)).padding(10.dp))
+            if(landscape&&!inPip&&controls)IconButton(onClick=onBack,modifier=Modifier.align(Alignment.TopStart)){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回窗口",tint=Color.White)}
             if(!inPip&&controls)Row(Modifier.align(Alignment.TopEnd)){
                 IconButton(onClick=onPip){Icon(Icons.Outlined.PictureInPictureAlt,"画中画",tint=Color.White)}
                 IconButton(onClick=onFullscreen){Icon(if(landscape)Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,if(landscape)"退出全屏"else"切换横竖屏",tint=Color.White)}
@@ -63,7 +65,9 @@ internal fun episodeOrder(size:Int,reversed:Boolean):List<Int> = (0 until size).
     if(settings)ModalBottomSheet(onDismissRequest={settings=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
         Column(Modifier.fillMaxWidth().padding(horizontal=20.dp).navigationBarsPadding().padding(bottom=20.dp)){
             Text("播放设置",fontSize=21.sp);Text("倍速",fontSize=12.sp,modifier=Modifier.padding(top=16.dp))
-            Row(Modifier.fillMaxWidth()){listOf(.75f,1f,1.25f,1.5f,2f).forEach{rate->TextButton(onClick={speed=rate;player?.setPlaybackSpeed(rate)},modifier=Modifier.weight(1f),contentPadding=PaddingValues(2.dp)){Text("${rate}×",fontSize=12.sp,color=if(speed==rate)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)}}}
+            Row(Modifier.fillMaxWidth()){listOf(.75f,1f,1.25f,1.5f,2f).forEach{rate->TextButton(onClick={player?.setPlaybackSpeed(rate)},modifier=Modifier.weight(1f),contentPadding=PaddingValues(2.dp)){Text("${rate}×",fontSize=12.sp,color=if(speed==rate)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)}}}
+            Text("画面中央双击播放 / 暂停；长按临时加速，松手恢复。",fontSize=11.sp,modifier=Modifier.padding(vertical=8.dp))
+            TextButton(onClick={settings=false;onSources()}){Text("查找其他来源 / 换源")}
             Row(verticalAlignment=Alignment.CenterVertically){Text("后台播放",Modifier.weight(1f));Switch(background,onCheckedChange=onBackground)}
             Row(verticalAlignment=Alignment.CenterVertically){Text("离开时自动小窗",Modifier.weight(1f));Switch(autoPip,onCheckedChange=onAutoPip)}
             Row(verticalAlignment=Alignment.CenterVertically){Text("过滤已识别的广告片段",Modifier.weight(1f));Switch(info.filter,onCheckedChange={onFilter()})}

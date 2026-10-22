@@ -12,6 +12,7 @@ import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -31,6 +32,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
@@ -53,6 +55,7 @@ class PlayerActivity:ComponentActivity() {
     private var requestId=""
     private var requested=false
     private val prefs by lazy{getSharedPreferences("player",0)}
+    private fun returnToWindow(){if(resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE)requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else {command(PlaybackSession.BOOST_END);finish();updatePip()}}
     private fun command(action:String,args:Bundle=Bundle.EMPTY){controller?.sendCustomCommand(SessionCommand(action,Bundle.EMPTY),args)}
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState);enableEdgeToEdge()
@@ -60,20 +63,30 @@ class PlayerActivity:ComponentActivity() {
         requestId=savedInstanceState?.getString("requestId") ?: UUID.randomUUID().toString()
         background=prefs.getBoolean("backgroundPlayback",true);autoPip=prefs.getBoolean("autoPip",true)
         setContent {ShiguangTheme {
+            val model:AppModel=viewModel()
             val info by PlaybackSession.state.collectAsState()
             val landscape=LocalConfiguration.current.orientation==Configuration.ORIENTATION_LANDSCAPE
             var filterDialog by remember{mutableStateOf(false)}
-            var speed by remember{mutableFloatStateOf(prefs.getFloat("speed",1f))}
+            var sourceSheet by remember{mutableStateOf(false)}
+            BackHandler(!inPip){returnToWindow()}
             LaunchedEffect(info.playing,autoPip){updatePip()}
             LaunchedEffect(landscape,inPip){val bars=WindowInsetsControllerCompat(window,window.decorView);bars.systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE;if(landscape&&!inPip)bars.hide(WindowInsetsCompat.Type.systemBars()) else bars.show(WindowInsetsCompat.Type.systemBars())}
             CompactPlayerScreen(info,controller,landscape,inPip,background,autoPip,connectionError,
-                onBack={finish()},onPip={enterPip()},
+                onBack={returnToWindow()},onPip={command(PlaybackSession.BOOST_END);enterPip()},
                 onFullscreen={requestedOrientation=if(landscape)ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE},
                 onPick={index->command(PlaybackSession.GOTO,Bundle().apply{putInt("index",index)})},
                 onFilter={filterDialog=true},onRetry={command(PlaybackSession.RETRY)},
                 onBrowser={openBrowser(this@PlayerActivity,info.page)},onStop={command(PlaybackSession.STOP);finish()},
                 onBackground={background=it;prefs.edit().putBoolean("backgroundPlayback",it).apply()},
-                onAutoPip={autoPip=it;prefs.edit().putBoolean("autoPip",it).apply();updatePip()})
+                onAutoPip={autoPip=it;prefs.edit().putBoolean("autoPip",it).apply();updatePip()},
+                onBoost={command(if(it)PlaybackSession.BOOST_START else PlaybackSession.BOOST_END)},onSources={sourceSheet=true})
+            if(sourceSheet&&info.entry!=null)SourceSwitchSheet(model,info.entry!!,Detail(info.entry!!,listOf(Line("当前线路",info.pages))),
+                progressOverride=Progress(info.entry!!,0,info.chapter,info.positionMs,System.currentTimeMillis(),info.title),onDismiss={sourceSheet=false}){result->
+                model.applySourceSwitch(info.entry!!,result);sourceSheet=false
+                val source=model.source(result.detail.entry.sourceId)
+                val request=PlaybackRequest(UUID.randomUUID().toString(),result.detail.entry,result.detail.lines[result.line].chapters,result.chapter,result.line,result.offset,source,source?.let{model.repo.headers(it)}?:emptyMap(),source?.let{JSONObject(it.rules).optBoolean("knownAds")}?:false)
+                command(PlaybackSession.LOAD,Bundle().apply{putString("request",request.json().toString())})
+            }
             if(filterDialog)AlertDialog(onDismissRequest={filterDialog=false},title={Text("广告过滤")},text={Text("只过滤有充分依据的HLS插播片段。切片不等于广告；压进画面的广告无法识别。若误删，可关闭过滤并重载，进度按原时间线保存。\n\n"+(info.report?.message() ?: ""))},confirmButton={TextButton(onClick={command(PlaybackSession.FILTER);filterDialog=false}){Text(if(info.filter)"关闭过滤并重载" else "开启过滤并重载")}},dismissButton={TextButton(onClick={filterDialog=false}){Text("返回播放")}})
         }}
         val f=MediaController.Builder(this,SessionToken(this,ComponentName(this,PlaybackService::class.java))).buildAsync();future=f
@@ -102,14 +115,14 @@ class PlayerActivity:ComponentActivity() {
     private fun params():PictureInPictureParams {
         val size=controller?.videoSize;val ratio=if(size!=null&&size.width>0&&size.height>0&&size.width.toDouble()/size.height in 0.42..2.38)Rational(size.width,size.height) else Rational(16,9)
         val b=PictureInPictureParams.Builder().setAspectRatio(ratio)
-        if(Build.VERSION.SDK_INT>=31)b.setAutoEnterEnabled(autoPip&&controller?.isPlaying==true).setSeamlessResizeEnabled(true)
+        if(Build.VERSION.SDK_INT>=31)b.setAutoEnterEnabled(!isFinishing&&autoPip&&controller?.isPlaying==true).setSeamlessResizeEnabled(true)
         return b.build()
     }
     private fun updatePip(){if(packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))runCatching{setPictureInPictureParams(params())}}
     private fun enterPip(){if(packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)&&controller?.currentMediaItem!=null)runCatching{enterPictureInPictureMode(params())}}
-    override fun onUserLeaveHint(){super.onUserLeaveHint();if(Build.VERSION.SDK_INT<31&&autoPip&&controller?.isPlaying==true)enterPip()}
+    override fun onUserLeaveHint(){super.onUserLeaveHint();if(!isFinishing&&Build.VERSION.SDK_INT<31&&autoPip&&controller?.isPlaying==true)enterPip()}
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode:Boolean,newConfig:Configuration){super.onPictureInPictureModeChanged(isInPictureInPictureMode,newConfig);val was=inPip;inPip=isInPictureInPictureMode;if(was&&!inPip&&!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))controller?.pause()}
     override fun onSaveInstanceState(outState:Bundle){outState.putString("requestId",requestId);super.onSaveInstanceState(outState)}
-    override fun onStop(){if(!isChangingConfigurations&&!isInPictureInPictureMode&&!background)controller?.pause();super.onStop()}
+    override fun onStop(){command(PlaybackSession.BOOST_END);if(!isChangingConfigurations&&!isInPictureInPictureMode&&!background)controller?.pause();super.onStop()}
     override fun onDestroy(){future?.let{MediaController.releaseFuture(it)};controller=null;super.onDestroy()}
 }

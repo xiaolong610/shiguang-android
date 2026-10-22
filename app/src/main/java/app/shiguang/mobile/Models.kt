@@ -62,7 +62,7 @@ data class Detail(val entry: Entry, val lines: List<Line>) {
     }
 }
 data class PageContent(val text: String = "", val images: List<String> = emptyList())
-data class Progress(val entry: Entry, val line: Int, val chapter: Int, val offset: Long, val updatedAt: Long)
+data class Progress(val entry: Entry, val line: Int, val chapter: Int, val offset: Long, val updatedAt: Long, val chapterTitle:String="")
 data class SearchReport(val entries: List<Entry>, val errors: List<String>, val searched: Int)
 
 object SourceCodec {

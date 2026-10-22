@@ -26,7 +26,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
-data class PlaybackInfo(val entry:Entry?=null,val title:String="",val error:String?=null,val status:String="",val filter:Boolean=true,val report:AdFilterResult?=null,val hls:Boolean=false,val chapter:Int=0,val total:Int=1,val playing:Boolean=false,val requestId:String="",val rendered:Boolean=false,val page:String="",val pages:List<Chapter> = emptyList())
+data class PlaybackInfo(val entry:Entry?=null,val title:String="",val error:String?=null,val status:String="",val filter:Boolean=true,val report:AdFilterResult?=null,val hls:Boolean=false,val chapter:Int=0,val total:Int=1,val playing:Boolean=false,val requestId:String="",val rendered:Boolean=false,val page:String="",val pages:List<Chapter> = emptyList(),val speed:Float=1f,val boosting:Boolean=false,val line:Int=0,val positionMs:Long=0)
 object PlaybackSession {
     val state=MutableStateFlow(PlaybackInfo())
     const val LOAD="app.shiguang.LOAD"
@@ -36,6 +36,8 @@ object PlaybackSession {
     const val RETRY="app.shiguang.RETRY"
     const val STOP="app.shiguang.STOP"
     const val GOTO="app.shiguang.GOTO"
+    const val BOOST_START="app.shiguang.BOOST_START"
+    const val BOOST_END="app.shiguang.BOOST_END"
 }
 data class PlaybackRequest(val id:String,val entry:Entry,val pages:List<Chapter>,val chapter:Int,val line:Int,val offset:Long,val source:Source?,val headers:Map<String,String>,val knownAds:Boolean) {
     fun json()=JSONObject().put("id",id).put("entry",entry.json()).put("pages",JSONArray().apply{pages.forEach{put(JSONObject().put("title",it.title).put("url",it.url))}}).put("chapter",chapter).put("line",line).put("offset",offset).put("source",source?.json()).put("headers",JSONObject(headers)).put("knownAds",knownAds)
@@ -70,6 +72,8 @@ class PlaybackService:MediaSessionService() {
     private var trackedChapter=0
     private var lastPosition=0L
     private var lastDuration=0L
+    private var temporaryBase:Float?=null
+    private fun endBoost(){val base=temporaryBase?:return;temporaryBase=null;exo.setPlaybackSpeed(base);update{it.copy(boosting=false,speed=base)}}
     private val prefs by lazy{getSharedPreferences("player",0)}
     private fun update(change:(PlaybackInfo)->PlaybackInfo){PlaybackSession.state.value=change(PlaybackSession.state.value)}
     private fun hls(item:MediaItem?)=item?.localConfiguration?.let{it.mimeType==MimeTypes.APPLICATION_M3U8||it.uri.path?.endsWith(".m3u8",true)==true} ?: false
@@ -85,20 +89,22 @@ class PlaybackService:MediaSessionService() {
         session=MediaSession.Builder(this,exo).setSessionActivity(notificationIntent).setCallback(object:MediaSession.Callback {
             override fun onConnect(session:MediaSession,controller:MediaSession.ControllerInfo):MediaSession.ConnectionResult {
                 val commands=MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
-                if(controller.packageName==packageName)listOf(PlaybackSession.LOAD,PlaybackSession.FILTER,PlaybackSession.NEXT,PlaybackSession.PREVIOUS,PlaybackSession.RETRY,PlaybackSession.STOP,PlaybackSession.GOTO).forEach{commands.add(SessionCommand(it,Bundle.EMPTY))}
+                if(controller.packageName==packageName)listOf(PlaybackSession.LOAD,PlaybackSession.FILTER,PlaybackSession.NEXT,PlaybackSession.PREVIOUS,PlaybackSession.RETRY,PlaybackSession.STOP,PlaybackSession.GOTO,PlaybackSession.BOOST_START,PlaybackSession.BOOST_END).forEach{commands.add(SessionCommand(it,Bundle.EMPTY))}
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands.build()).build()
             }
             override fun onCustomCommand(session:MediaSession,controller:MediaSession.ControllerInfo,command:SessionCommand,args:Bundle):ListenableFuture<SessionResult> {
                 if(controller.packageName!=packageName)return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
                 return try {
                     when(command.customAction) {
+                        PlaybackSession.BOOST_START->{if(temporaryBase==null&&exo.isPlaying){temporaryBase=exo.playbackParameters.speed;exo.setPlaybackSpeed(maxOf(2f,temporaryBase!!));update{it.copy(boosting=true)}}}
+                        PlaybackSession.BOOST_END->endBoost()
                         PlaybackSession.LOAD->{val next=PlaybackRequest.parse(JSONObject(args.getString("request") ?: error("请求为空")));if(next.id!=request?.id)load(next)}
                         PlaybackSession.FILTER->{filter.set(!filter.get());prefs.edit().putBoolean("filterAds",filter.get()).apply();request?.let{load(it.copy(id=UUID.randomUUID().toString(),chapter=trackedChapter,offset=originalPosition()))}}
                         PlaybackSession.NEXT->next(1)
                         PlaybackSession.PREVIOUS->next(-1)
                         PlaybackSession.GOTO->{val index=args.getInt("index",-1);require(index in (request?.pages?.indices?:IntRange.EMPTY)){"集数已变更"};next(index-trackedChapter)}
                         PlaybackSession.RETRY->request?.let{load(it.copy(id=UUID.randomUUID().toString(),chapter=trackedChapter,offset=if(pendingSeek!=null)it.offset else originalPosition()))}
-                        PlaybackSession.STOP->{save();resolver?.cancel();request=null;exo.stop();exo.clearMediaItems();PlaybackSession.state.value=PlaybackInfo();Handler(Looper.getMainLooper()).postDelayed({stopSelf()},100)}
+                        PlaybackSession.STOP->{endBoost();save();resolver?.cancel();request=null;exo.stop();exo.clearMediaItems();PlaybackSession.state.value=PlaybackInfo();Handler(Looper.getMainLooper()).postDelayed({stopSelf()},100)}
                         else->return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
                     }
                     Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -108,12 +114,12 @@ class PlaybackService:MediaSessionService() {
         exo.addListener(object:Player.Listener {
             override fun onRenderedFirstFrame(){update{it.copy(rendered=true)}}
             override fun onPlayerError(error:PlaybackException){update{it.copy(error="播放失败：${error.errorCodeName}。可重新解析或换线路。",status="",playing=false)}}
-            override fun onIsPlayingChanged(isPlaying:Boolean){update{it.copy(playing=isPlaying)}}
-            override fun onPlaybackParametersChanged(playbackParameters:PlaybackParameters){prefs.edit().putFloat("speed",playbackParameters.speed).apply()}
+            override fun onIsPlayingChanged(isPlaying:Boolean){if(!isPlaying)endBoost();update{it.copy(playing=isPlaying)}}
+            override fun onPlaybackParametersChanged(playbackParameters:PlaybackParameters){if(temporaryBase==null)prefs.edit().putFloat("speed",playbackParameters.speed).apply();update{it.copy(speed=playbackParameters.speed)}}
             override fun onMediaItemTransition(item:MediaItem?,reason:Int) {
                 val r=request ?: return
                 if(directList){
-                    if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)store.save(r.entry,r.line,trackedChapter,lastDuration.coerceAtLeast(lastPosition))
+                    if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)store.save(r.entry,r.line,trackedChapter,lastDuration.coerceAtLeast(lastPosition),r.pages[trackedChapter].title)
                     trackedChapter=exo.currentMediaItemIndex.coerceIn(r.pages.indices)
                 }
                 update{it.copy(title=item?.mediaMetadata?.title?.toString().orEmpty(),chapter=trackedChapter,hls=hls(item),report=reports[key()],page=r.pages[trackedChapter].url)}
@@ -151,9 +157,9 @@ class PlaybackService:MediaSessionService() {
         return HlsMediaSource.Factory(data).setPlaylistParserFactory(factory).createMediaSource(item)
     }
     private fun load(r:PlaybackRequest) {
-        save();resolver?.cancel();exo.pause();exo.stop();exo.clearMediaItems();pendingSeek=null
+        endBoost();save();resolver?.cancel();exo.pause();exo.stop();exo.clearMediaItems();pendingSeek=null
         request=r;trackedChapter=r.chapter;lastPosition=r.offset;lastDuration=0;reports.clear()
-        PlaybackSession.state.value=PlaybackInfo(r.entry,r.pages[r.chapter].title,status="正在准备播放…",filter=filter.get(),chapter=r.chapter,total=r.pages.size,requestId=r.id,page=r.pages[r.chapter].url,pages=r.pages)
+        PlaybackSession.state.value=PlaybackInfo(r.entry,r.pages[r.chapter].title,status="正在准备播放…",filter=filter.get(),chapter=r.chapter,total=r.pages.size,requestId=r.id,page=r.pages[r.chapter].url,pages=r.pages,speed=exo.playbackParameters.speed,line=r.line,positionMs=r.offset)
         resolver=scope.launch {
             try {
                 directList=r.pages.all{WebVideoResolver.direct(it.url)||it.url.startsWith("asset:///")}
@@ -182,7 +188,7 @@ class PlaybackService:MediaSessionService() {
     private fun save() {
         val r=request ?: return
         if(pendingSeek!=null||exo.currentMediaItem==null)return
-        lastPosition=originalPosition();store.save(r.entry,r.line,trackedChapter,lastPosition)
+        lastPosition=originalPosition();store.save(r.entry,r.line,trackedChapter,lastPosition,r.pages[trackedChapter].title);update{it.copy(positionMs=lastPosition)}
     }
     override fun onTaskRemoved(rootIntent:Intent?) {if(!exo.playWhenReady||exo.mediaItemCount==0)stopSelf()}
     override fun onDestroy(){save();request=null;scope.cancel();session.release();exo.release();store.close();PlaybackSession.state.value=PlaybackInfo();super.onDestroy()}

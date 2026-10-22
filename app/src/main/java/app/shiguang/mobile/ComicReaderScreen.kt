@@ -44,32 +44,41 @@ import kotlinx.coroutines.flow.distinctUntilChanged
     var night by remember{mutableStateOf(prefs.getBoolean("night",false))}
     var index by rememberSaveable(entry.key){mutableIntStateOf(initial.coerceIn(chapters.indices))}
     var page by remember{mutableStateOf<PageContent?>(null)};var failure by remember{mutableStateOf<String?>(null)}
-    var retry by remember{mutableIntStateOf(0)};var menu by rememberSaveable{mutableStateOf(false)};var sheet by remember{mutableStateOf("")}
+    var retry by remember(index){mutableIntStateOf(0)};var menu by rememberSaveable{mutableStateOf(false)};var sheet by remember{mutableStateOf("")}
     var ready by remember{mutableStateOf(false)};var openAtEnd by remember{mutableStateOf(false)}
     val list=rememberLazyListState();val pager=rememberPagerState{(page?.images?.size?:0)+1};val scope=rememberCoroutineScope()
-    val loader=remember{ImageLoader.Builder(context).components{add(SvgDecoder.Factory())}.build()}
+    val loader=remember{ReadingPreload.images(context)}
+    val imageWidth=context.resources.displayMetrics.widthPixels
     val bg=if(night)Color(0xFF202825)else Color(0xFFFAF5E9);val fg=if(night)Color(0xFFD3DACE)else Color(0xFF1C302B)
     fun positionKey()="comic:${entry.key}:$line:$index"
-    fun save(){if(page!=null&&ready){val image=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex else pager.currentPage;val offset=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemScrollOffset else 0;prefs.edit().putString(positionKey(),"$image:$offset").apply();model.store.save(entry,line,index,image.toLong())}}
+    fun save(){if(page!=null&&ready){val image=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex else pager.currentPage;val offset=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemScrollOffset else 0;prefs.edit().putString(positionKey(),"$image:$offset").apply();model.store.save(entry,line,index,image.toLong(),chapters[index].title)}}
     fun change(next:Int,atEnd:Boolean=false){if(next !in chapters.indices)return;save();ready=false;page=null;openAtEnd=atEnd;index=next}
     fun leave(){save();onBack()}
     fun turn(next:Boolean){if(scope.coroutineContext.isActive)scope.launch{val target=pager.currentPage+if(next)1 else -1;if(target<0){if(index>0)change(index-1,true)}else if(target>pager.pageCount-1){if(index<chapters.lastIndex)change(index+1)}else pager.animateScrollToPage(target)}}
     fun selectMode(value:ComicTurnMode){if(value==mode)return;save();val image=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex else pager.currentPage;mode=value;prefs.edit().putString("comicTurnMode",value.name).apply();scope.launch{if(value==ComicTurnMode.SCROLL)list.scrollToItem(image.coerceIn(0,page?.images?.size?:0))else pager.scrollToPage(image.coerceIn(0,pager.pageCount-1))}}
     BackHandler{if(sheet.isNotEmpty())sheet=""else leave()}
     LaunchedEffect(index,retry){ready=false;page=null;failure=null
-        try{val loaded=model.repo.page(source?:error("原内容源已移除"),entry,chapters[index]);require(loaded.images.isNotEmpty()){"本话没有可显示的图片"};page=loaded
+        try{val loaded=model.repo.readingPage(source?:error("原内容源已移除"),entry,chapters[index],force=retry>0);require(loaded.images.isNotEmpty()){"本话没有可显示的图片"};page=loaded
             val saved=prefs.getString(positionKey(),null)?.split(':');val image=if(openAtEnd)loaded.images.lastIndex else(saved?.getOrNull(0)?.toIntOrNull()?:0).coerceIn(0,loaded.images.size)
             withFrameNanos{};if(mode==ComicTurnMode.SCROLL){list.scrollToItem(image,if(openAtEnd)0 else saved?.getOrNull(1)?.toIntOrNull()?:0)
                 if(saved==null&&!openAtEnd){val old=model.store.progress().find{it.entry.key==entry.key&&it.line==line&&it.chapter==index};if(old!=null&&old.offset>0)list.scrollBy(old.offset.toFloat())}
             }else pager.scrollToPage(image);openAtEnd=false;ready=true;save()
         }catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}
     }
+    val visibleImage by remember{derivedStateOf{if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex else pager.currentPage}}
+    DisposableEffect(page,index,visibleImage,mode){
+        val tasks=if(page!=null&&ReadingPreload.allowed(context,source))page!!.images.drop(visibleImage+1).take(3).map{url->loader.enqueue(ReadingPreload.image(context,model.repo,source,url,imageWidth))}else emptyList()
+        onDispose{tasks.forEach{it.dispose()}}
+    }
+    LaunchedEffect(index,page){if(page!=null&&source!=null&&index<chapters.lastIndex&&ReadingPreload.allowed(context,source)){
+        try{model.repo.readingPage(source,entry,chapters[index+1])}catch(e:CancellationException){throw e}catch(_:Exception){}
+    }}
     LaunchedEffect(index,page,mode,ready){if(ready)snapshotFlow{if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset else pager.currentPage to 0}.distinctUntilChanged().collect{save()}}
     val latestSave by rememberUpdatedState(newValue={save()});val lifecycle=LocalLifecycleOwner.current
     DisposableEffect(lifecycle){val observer=LifecycleEventObserver{_,event->if(event==Lifecycle.Event.ON_STOP)latestSave()};lifecycle.lifecycle.addObserver(observer);onDispose{latestSave();lifecycle.lifecycle.removeObserver(observer)}}
     @Composable fun image(i:Int,paged:Boolean){
-        var imageRetry by remember(i){mutableIntStateOf(0)}
-        key(imageRetry){SubcomposeAsyncImage(model=ImageRequest.Builder(context).data(page!!.images[i]).apply{source?.let{model.repo.headers(it).forEach{(k,v)->addHeader(k,v)}}}.build(),imageLoader=loader,
+        var imageRetry by remember(index,i){mutableIntStateOf(0)}
+        key(imageRetry){SubcomposeAsyncImage(model=ReadingPreload.image(context,model.repo,source,page!!.images[i],imageWidth,retry=imageRetry>0),imageLoader=loader,
             contentDescription="第 ${i+1} 页",contentScale=if(paged)ContentScale.Fit else ContentScale.FillWidth,
             loading={Box(Modifier.fillMaxWidth().heightIn(min=180.dp),contentAlignment=Alignment.Center){CircularProgressIndicator(Modifier.size(28.dp))}},
             error={Column(Modifier.fillMaxWidth().heightIn(min=180.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text("第 ${i+1} 页加载失败",color=fg);TextButton(onClick={imageRetry++}){Text("重新加载图片")}}},

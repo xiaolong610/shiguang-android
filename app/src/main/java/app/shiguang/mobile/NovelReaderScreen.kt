@@ -46,7 +46,7 @@ private val ReadingThemes=listOf(Color(0xFFF9F8F4) to Color(0xFF292723),Color(0x
     val context=LocalContext.current;val entry=detail.entry;val chapters=detail.lines[line].chapters
     val preferences=remember{NovelPreferences(context)};val source=model.source(entry.sourceId)
     var index by rememberSaveable(entry.key){mutableIntStateOf(initial.coerceIn(chapters.indices))}
-    var page by remember(entry.key){mutableStateOf<PageContent?>(null)};var failure by remember{mutableStateOf<String?>(null)};var retry by remember{mutableIntStateOf(0)}
+    var page by remember(entry.key){mutableStateOf<PageContent?>(null)};var failure by remember{mutableStateOf<String?>(null)};var retry by remember(index){mutableIntStateOf(0)}
     var menu by rememberSaveable{mutableStateOf(false)};var sheet by remember{mutableStateOf("")}
     var font by remember{mutableFloatStateOf(preferences.font)};var spacing by remember{mutableFloatStateOf(preferences.spacing)};var theme by remember{mutableIntStateOf(preferences.theme)};var serif by remember{mutableStateOf(preferences.serif)};var margin by remember{mutableIntStateOf(preferences.margin)};var keep by remember{mutableStateOf(preferences.keepScreen)}
     var brightness by remember{mutableFloatStateOf(-1f)};var marks by remember{mutableStateOf(preferences.marks(entry.key))}
@@ -67,7 +67,7 @@ private val ReadingThemes=listOf(Color(0xFFF9F8F4) to Color(0xFF292723),Color(0x
         val firstSize=scroll.layoutInfo.visibleItemsInfo.firstOrNull()?.size?.coerceAtLeast(1)?:1
         if(page!=null&&scroll.layoutInfo.totalItemsCount>1&&!scroll.canScrollForward)100 else (((scroll.firstVisibleItemIndex-1).coerceAtLeast(0)+if(scroll.firstVisibleItemIndex>0)scroll.firstVisibleItemScrollOffset.toFloat()/firstSize else 0f)*100/paragraphs.size.coerceAtLeast(1)).toInt().coerceIn(0,99)
     }}
-    fun save(){if(page!=null){val item=if(turnMode==NovelTurnMode.SCROLL)scroll.firstVisibleItemIndex else pagedItem;val offset=if(turnMode==NovelTurnMode.SCROLL)scroll.firstVisibleItemScrollOffset else pagedOffset;preferences.position(entry.key,index,item,offset);model.store.save(entry,line,index,item.toLong())}}
+    fun save(){if(page!=null){val item=if(turnMode==NovelTurnMode.SCROLL)scroll.firstVisibleItemIndex else pagedItem;val offset=if(turnMode==NovelTurnMode.SCROLL)scroll.firstVisibleItemScrollOffset else pagedOffset;preferences.position(entry.key,index,item,offset);model.store.save(entry,line,index,item.toLong(),chapters[index].title)}}
     fun selectTurnMode(value:NovelTurnMode){if(value==turnMode)return;save();if(turnMode==NovelTurnMode.SCROLL){pagedInitialItem=scroll.firstVisibleItemIndex;pagedInitialOffset=scroll.firstVisibleItemScrollOffset;pagedItem=pagedInitialItem;pagedOffset=pagedInitialOffset}else if(value==NovelTurnMode.SCROLL)scope.launch{withFrameNanos{};scroll.scrollToItem(pagedItem,pagedOffset)};turnMode=value;preferences.turnMode=value}
     fun change(next:Int,paragraph:Int?=null){if(next !in chapters.indices)return;save();if(next==index){if(paragraph!=null){if(turnMode==NovelTurnMode.SCROLL)scope.launch{scroll.scrollToItem(paragraph+1)}else{pagedJump=paragraph;pagedRequest++}};return};if(matching&&speech.active)Narration.command(context,"pause");page=null;pagedJump=null;jumpParagraph=paragraph;index=next}
     fun leave(){save();onBack()}
@@ -76,9 +76,12 @@ private val ReadingThemes=listOf(Color(0xFFF9F8F4) to Color(0xFF292723),Color(0x
     LaunchedEffect(page){if(page!=null&&listenRequested){sheet="listen";listenRequested=false}}
     BackHandler{if(sheet.isNotBlank())sheet=""else leave()}
     LaunchedEffect(index,retry){page=null;failure=null
-        try{val loaded=model.repo.page(source?:error("原内容源已移除"),entry,chapters[index]);page=loaded;val pos=preferences.position(entry.key,index);val item=jumpParagraph?.plus(1)?:pos.first;jumpParagraph=null;pagedInitialItem=item;pagedInitialOffset=if(item==pos.first)pos.second else 0;pagedItem=item;pagedOffset=pagedInitialOffset;withFrameNanos{};if(turnMode==NovelTurnMode.SCROLL)scroll.scrollToItem(item.coerceIn(0,NovelText.paragraphs(loaded.text).size),if(item==pos.first)pos.second else 0);model.store.save(entry,line,index,(if(turnMode==NovelTurnMode.SCROLL)scroll.firstVisibleItemIndex else pagedItem).toLong())}
+        try{val loaded=model.repo.readingPage(source?:error("原内容源已移除"),entry,chapters[index],force=retry>0);page=loaded;val pos=preferences.position(entry.key,index);val item=jumpParagraph?.plus(1)?:pos.first;jumpParagraph=null;pagedInitialItem=item;pagedInitialOffset=if(item==pos.first)pos.second else 0;pagedItem=item;pagedOffset=pagedInitialOffset;withFrameNanos{};if(turnMode==NovelTurnMode.SCROLL)scroll.scrollToItem(item.coerceIn(0,NovelText.paragraphs(loaded.text).size),if(item==pos.first)pos.second else 0);model.store.save(entry,line,index,(if(turnMode==NovelTurnMode.SCROLL)scroll.firstVisibleItemIndex else pagedItem).toLong(),chapters[index].title)}
         catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}
     }
+    LaunchedEffect(index,page){if(page!=null&&source!=null&&index<chapters.lastIndex&&ReadingPreload.allowed(context,source)){
+        try{model.repo.readingPage(source,entry,chapters[index+1])}catch(e:CancellationException){throw e}catch(_:Exception){}
+    }}
     LaunchedEffect(index,page,turnMode){if(page!=null&&turnMode==NovelTurnMode.SCROLL)snapshotFlow{scroll.firstVisibleItemIndex to scroll.firstVisibleItemScrollOffset}.distinctUntilChanged().collect{(item,offset)->preferences.position(entry.key,index,item,offset)}}
     val lifecycle=LocalLifecycleOwner.current
     val saveLatest by rememberUpdatedState(newValue={save()})
