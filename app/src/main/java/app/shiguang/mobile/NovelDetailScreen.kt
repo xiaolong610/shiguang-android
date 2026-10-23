@@ -9,6 +9,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.BookmarkAdded
 import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -24,11 +25,11 @@ import kotlinx.coroutines.CancellationException
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun NovelDetailScreen(model:AppModel,entry:Entry,onBack:()->Unit,onRead:(Detail,Int,Int)->Unit,onListen:(Detail,Int,Int)->Unit=onRead,onSwitched:(Entry)->Unit={}){
     var detail by remember(entry.key){mutableStateOf<Detail?>(null)};var failure by remember{mutableStateOf<String?>(null)};var retry by remember{mutableIntStateOf(0)}
-    var line by remember{mutableIntStateOf(0)}
+    var line by remember{mutableIntStateOf(0)};var chapterQuery by remember{mutableStateOf("")};var searchingChapters by remember{mutableStateOf(false)}
     val context=LocalContext.current;val sortPrefs=remember{context.getSharedPreferences("chapter-order",0)}
     var reverse by remember{mutableStateOf(sortPrefs.getBoolean(Kind.NOVEL.name,false))}
     val blue=Color(0xFF3975C6);val muted=Color(0xFF888A8D);val paper=Color(0xFFFAFAF8)
-    LaunchedEffect(entry.key,retry){failure=null;try{detail=model.repo.detail(model.source(entry.sourceId)?:error("原内容源已移除"),entry,force=retry>0);line=(model.history.find{it.entry.key==entry.key}?.line?:0).coerceIn(detail!!.lines.indices);model.recordDetail(detail!!,line)}catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}}
+    LaunchedEffect(entry.key,retry){failure=null;try{while(!model.libraryReady&&model.libraryError.isBlank())kotlinx.coroutines.delay(10);detail=model.repo.detail(model.source(entry.sourceId)?:error("原内容源已移除"),entry,force=retry>0);line=(model.history.find{it.entry.key==entry.key}?.line?:0).coerceIn(detail!!.lines.indices);model.recordDetail(detail!!,line)}catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}}
     val saved=model.favorites.any{it.key==entry.key}
     Column(Modifier.fillMaxSize().background(paper).navigationBarsPadding()){
         TopAppBar(title={Text("书籍",fontSize=16.sp)},navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回")}},actions={FavoriteButton(saved){model.favorite(detail?.entry?:entry,detail)}},windowInsets=WindowInsets(0,0,0,0),colors=TopAppBarDefaults.topAppBarColors(containerColor=paper))
@@ -40,8 +41,9 @@ import kotlinx.coroutines.CancellationException
             failure?.let{item{Text(it,color=MaterialTheme.colorScheme.error);TextButton(onClick={retry++}){Text("重新加载")}}}
             detail?.let{d->
                 if(d.lines.size>1)item{ScrollableTabRow(selectedTabIndex=line,containerColor=paper){d.lines.forEachIndexed{i,l->Tab(selected=i==line,onClick={line=i},text={Text(l.name)})}}}
-                item{Row(Modifier.fillMaxWidth().padding(bottom=10.dp),verticalAlignment=Alignment.CenterVertically){Text("目录",fontSize=19.sp,fontWeight=FontWeight.Medium,modifier=Modifier.weight(1f));Text("${d.lines[line].chapters.size} 章",fontSize=12.sp,color=muted);ChapterSortButton(reverse){reverse=!reverse;sortPrefs.edit().putBoolean(Kind.NOVEL.name,reverse).apply()}}}
-                items(chapterDisplayIndices(d.lines[line].chapters.size,reverse),key={it}){i->val ch=d.lines[line].chapters[i];Column(Modifier.fillMaxWidth().clickable{onRead(d,line,i)}){Text(ch.title,color=if(model.history.any{it.entry.key==entry.key&&it.line==line&&it.chapter==i})blue else Color(0xFF33363A),fontSize=15.sp,maxLines=2,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(vertical=19.dp));HorizontalDivider(color=Color(0xFFEEEEEB))}}
+                item{Row(Modifier.fillMaxWidth().padding(bottom=10.dp),verticalAlignment=Alignment.CenterVertically){Text("目录",fontSize=19.sp,fontWeight=FontWeight.Medium,modifier=Modifier.weight(1f));Text("${d.lines[line].chapters.size} 章",fontSize=12.sp,color=muted);IconButton(onClick={searchingChapters=!searchingChapters;if(!searchingChapters)chapterQuery=""}){Icon(Icons.Outlined.Search,"搜索章节")};ChapterSortButton(reverse){reverse=!reverse;sortPrefs.edit().putBoolean(Kind.NOVEL.name,reverse).apply()}}}
+                if(searchingChapters)item{OutlinedTextField(chapterQuery,{chapterQuery=it},label={Text("搜索章节名")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(bottom=10.dp))}
+                items(chapterDisplayIndices(d.lines[line].chapters.size,reverse).filter{chapterQuery.isBlank()||d.lines[line].chapters[it].title.contains(chapterQuery,true)},key={it}){i->val ch=d.lines[line].chapters[i];Column(Modifier.fillMaxWidth().clickable{onRead(d,line,i)}){Text(ch.title,color=if(model.history.any{it.entry.key==entry.key&&it.line==line&&it.chapter==i})blue else Color(0xFF33363A),fontSize=15.sp,maxLines=2,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(vertical=19.dp));HorizontalDivider(color=Color(0xFFEEEEEB))}}
             }
         }
         Surface(color=paper,shadowElevation=2.dp){Row(Modifier.fillMaxWidth().padding(18.dp),horizontalArrangement=Arrangement.spacedBy(14.dp)){

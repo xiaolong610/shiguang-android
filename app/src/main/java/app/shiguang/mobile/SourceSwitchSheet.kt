@@ -23,20 +23,21 @@ data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val
 
 @Composable internal fun SourceSwitchButton(model:AppModel,entry:Entry,detail:Detail?,onSwitched:(Entry)->Unit,onContinue:(SourceSwitchResult)->Unit={}){
     if(entry.sourceId==LocalNovels.source.id||entry.sourceId.startsWith("demo-")||entry.sourceId=="direct-video")return
-    var open by remember(entry.key){mutableStateOf(false)}
+    var open by remember(entry.key){mutableStateOf(false)};val switchScope=rememberCoroutineScope();var switchError by remember{mutableStateOf<String?>(null)}
     TextButton(onClick={open=true},contentPadding=PaddingValues(horizontal=0.dp)){
         Icon(Icons.Outlined.SwapHoriz,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text("查找其他来源 / 换源",fontSize=12.sp)
     }
     if(open)SourceSwitchSheet(model,entry,detail,onDismiss={open=false}){result->
-        model.applySourceSwitch(entry,result);open=false;onSwitched(result.detail.entry);onContinue(result)
+        switchScope.launch{try{model.applySourceSwitch(entry,result).await();open=false;onSwitched(result.detail.entry);onContinue(result)}catch(e:CancellationException){throw e}catch(e:Exception){switchError=ContentRepository.friendlyError(e)}}
     }
+    switchError?.let{AlertDialog(onDismissRequest={switchError=null},title={Text("换源未完成")},text={Text(it)},confirmButton={TextButton(onClick={switchError=null}){Text("知道了")}})}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun SourceSwitchSheet(model:AppModel,entry:Entry,currentDetail:Detail?,
     progressOverride:Progress?=null,onDismiss:()->Unit,onSwitch:(SourceSwitchResult)->Unit){
     val scope=rememberCoroutineScope()
-    val previous=progressOverride?:model.store.progressFor(entry.key)
+    val previous=progressOverride?:model.history.firstOrNull{it.entry.key==entry.key}
     val previousTitle=previous?.chapterTitle?.takeIf{it.isNotBlank()}
         ?: previous?.let{currentDetail?.lines?.getOrNull(it.line)?.chapters?.getOrNull(it.chapter)?.title}.orEmpty()
     var query by remember(entry.key){mutableStateOf(entry.title)}

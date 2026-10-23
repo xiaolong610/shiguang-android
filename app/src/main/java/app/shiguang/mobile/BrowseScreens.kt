@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
@@ -34,6 +35,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,7 +51,7 @@ import org.json.JSONObject
     }
 }
 
-@Composable internal fun CompactDiscoverScreen(model:AppModel,onOpen:(Entry)->Unit,onAddRules:()->Unit,onDirect:()->Unit){
+@Composable internal fun CompactDiscoverScreen(model:AppModel,onOpen:(Entry)->Unit,onAddRules:()->Unit,onDirect:()->Unit,onStorage:()->Unit={}){
     val context=LocalContext.current;val focus=LocalFocusManager.current;val scope=rememberCoroutineScope()
     var adding by remember{mutableStateOf(false)};var importing by remember{mutableStateOf(false)};var issue by remember{mutableStateOf<String?>(null)}
     val cards=remember(model.entries,model.history){val history=model.history.associateBy{it.entry.key};WorkIdentity.groups(model.entries).map{group->group.maxByOrNull{e->history[e.key]?.updatedAt?:0L}!! to group.size}}
@@ -56,18 +59,20 @@ import org.json.JSONObject
     val sourceCounts=remember(cards){cards.associate{it.first.key to it.second}}
     var fullSearchMenu by remember{mutableStateOf(false)};var showErrors by remember{mutableStateOf(false)}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){importing=true;scope.launch{try{onOpen(model.importNovel(uri))}catch(e:CancellationException){throw e}catch(e:Exception){issue=ContentRepository.friendlyError(e)}finally{importing=false}}}}
-    LaunchedEffect(model.sources,model.category){model.ensureSearch()}
+    LaunchedEffect(model.sources,model.category,model.libraryReady,model.libraryRefreshing){model.ensureSearch()}
     Column(Modifier.fillMaxSize()){
         Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
             Text("拾光",fontSize=23.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=12.dp))
             Surface(modifier=Modifier.weight(1f).height(44.dp),shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surfaceVariant){Row(Modifier.padding(start=12.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.Search,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));BasicTextField(value=model.query,onValueChange={model.editQuery(it)},singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(fontSize=13.sp,color=MaterialTheme.colorScheme.onSurface),modifier=Modifier.weight(1f),decorationBox={field->Box(contentAlignment=Alignment.CenterStart){if(model.query.isEmpty())Text("搜索${model.category.label} · 支持少字",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant);field()}},keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus();model.search()}));IconButton(onClick={focus.clearFocus();model.search()}){Icon(Icons.Outlined.ArrowForward,"搜索",Modifier.size(20.dp))}}}
             Box{IconButton(onClick={adding=true},enabled=!importing){Icon(Icons.Outlined.Add,"添加")};DropdownMenu(expanded=adding,onDismissRequest={adding=false}){
                 DropdownMenuItem(text={Column{Text("导入本地小说");Text("常见格式 · 最大100MiB",fontSize=11.sp)}},leadingIcon={Icon(Icons.Outlined.FolderOpen,null)},onClick={adding=false;picker.launch(arrayOf("*/*"))})
+                DropdownMenuItem(text={Text("下载与缓存")},leadingIcon={Icon(Icons.Outlined.Download,null)},onClick={adding=false;onStorage()})
                 DropdownMenuItem(text={Text("添加内容源")},leadingIcon={Icon(Icons.Outlined.Layers,null)},onClick={adding=false;onAddRules()})
                 DropdownMenuItem(text={Text("打开视频链接")},leadingIcon={Icon(Icons.Outlined.Link,null)},onClick={adding=false;onDirect()})
             }}
         }
         CompactCategoryTabs(model.category,{model.changeCategory(it)},pills=false)
+        if(model.libraryError.isNotBlank())Row(Modifier.padding(horizontal=16.dp)){Text("数据读取失败：${model.libraryError}",fontSize=11.sp,modifier=Modifier.weight(1f));TextButton(onClick={model.refreshLibrary()}){Text("重试")}}
         if(model.query.isNotBlank()&&model.suggestions.isNotEmpty())Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){Text("可能想找",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant);model.suggestions.forEach{title->TextButton(onClick={focus.clearFocus();model.search(title)},contentPadding=PaddingValues(horizontal=8.dp)){Text(title,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=150.dp))}}}
         if(importing){LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp));Text("正在整理小说…",fontSize=12.sp,modifier=Modifier.padding(horizontal=16.dp))}
         model.history.firstOrNull{model.entryCategory(it.entry)==model.category}?.takeIf{!model.searched}?.let{progress->
@@ -75,6 +80,7 @@ import org.json.JSONObject
         }
         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically){Text(if(model.searched)"搜索结果"else"最近更新",fontSize=18.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f));Text("${displayEntries.size} 部",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
         Row(Modifier.fillMaxWidth().heightIn(min=36.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){Text(model.searchMessage,Modifier.weight(1f),fontSize=10.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(model.hasPendingResults)TextButton(onClick={model.revealSearchResults()}){Text(if(model.pendingResultCount>0)"新结果 ${model.pendingResultCount}"else"更新结果",fontSize=11.sp)}
             if(model.loading)TextButton(onClick={model.stopSearch()}){Text("停止",fontSize=11.sp)}
             else if(model.searchRemaining>0){TextButton(onClick={model.moreSearch()}){Text("继续查找 ${model.searchRemaining}",fontSize=11.sp)};Box{IconButton(onClick={fullSearchMenu=true}){Icon(Icons.Outlined.MoreVert,"搜索范围",Modifier.size(18.dp))};DropdownMenu(fullSearchMenu,{fullSearchMenu=false}){DropdownMenuItem(text={Text("搜索全部剩余来源")},onClick={fullSearchMenu=false;model.moreSearch(all=true)})}}}
         }
@@ -83,19 +89,20 @@ import org.json.JSONObject
         when{
             model.loading&&model.entries.isEmpty()->Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){CircularProgressIndicator()}
             model.entries.isEmpty()->Column(Modifier.padding(24.dp)){Text("暂时没有内容",fontSize=17.sp);Text("添加或启用${model.category.label}规则，或换个关键词。",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-            else->{val holder=rememberSaveableStateHolder();holder.SaveableStateProvider(model.category.name){CompactEntryGrid(displayEntries,onOpen=onOpen,sourceCounts=sourceCounts)}}
+            else->{val holder=rememberSaveableStateHolder();holder.SaveableStateProvider(model.category.name){CompactEntryGrid(displayEntries,onOpen=onOpen,sourceCounts=sourceCounts,onScroll={model.holdSearchResults()})}}
         }
     }
     issue?.let{AlertDialog(onDismissRequest={issue=null},title={Text("未能导入小说")},text={Text(it)},confirmButton={TextButton(onClick={issue=null}){Text("知道了")}})}
     if(showErrors)AlertDialog(onDismissRequest={showErrors=false},title={Text("未能加载的来源")},text={LazyColumn(Modifier.heightIn(max=360.dp)){items(model.errors){Text(it,fontSize=12.sp,modifier=Modifier.padding(vertical=8.dp))}}},confirmButton={TextButton(onClick={showErrors=false}){Text("关闭")}})
 }
 
-@Composable internal fun CompactEntryGrid(entries:List<Entry>,progress:Map<String,Progress> = emptyMap(),onOpen:(Entry)->Unit,updates:Map<String,FollowState> = emptyMap(),sourceCounts:Map<String,Int> = emptyMap()){
-    val density=LocalDensity.current
+@Composable internal fun CompactEntryGrid(entries:List<Entry>,progress:Map<String,Progress> = emptyMap(),onOpen:(Entry)->Unit,updates:Map<String,FollowState> = emptyMap(),sourceCounts:Map<String,Int> = emptyMap(),onScroll:()->Unit={}){
+    val density=LocalDensity.current;val gridState=rememberLazyGridState();val scrollCallback by rememberUpdatedState(onScroll)
+    LaunchedEffect(gridState){snapshotFlow{gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset}.distinctUntilChanged().collect{if(it.first>0||it.second>0)scrollCallback()}}
     BoxWithConstraints(Modifier.fillMaxSize()){
         val columns=if(maxWidth<350.dp||density.fontScale>1.25f)2 else (maxWidth.value/125f).toInt().coerceAtLeast(3)
-        LazyVerticalGrid(columns=GridCells.Fixed(columns),state=rememberLazyGridState(),contentPadding=PaddingValues(16.dp,0.dp,16.dp,16.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-            items(entries,key={it.key}){entry->Column(Modifier.clickable{onOpen(entry)}){
+        LazyVerticalGrid(columns=GridCells.Fixed(columns),state=gridState,contentPadding=PaddingValues(16.dp,0.dp,16.dp,16.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+            items(entries,key={it.key}){entry->Column(Modifier.testTag("entry:${entry.key}").clickable{onOpen(entry)}){
                 Box {Cover(entry,Modifier.fillMaxWidth().aspectRatio(.8f));val count=updates[entry.key]?.newCount(progress[entry.key])?:0
                     if(count>0)Surface(color=MaterialTheme.colorScheme.primary,shape=RoundedCornerShape(6.dp),modifier=Modifier.align(Alignment.TopEnd).padding(5.dp)){Text("新增 $count ${if(entry.kind==Kind.VIDEO)"集"else if(entry.kind==Kind.COMIC)"话"else"章"}",color=MaterialTheme.colorScheme.onPrimary,fontSize=10.sp,modifier=Modifier.padding(horizontal=6.dp,vertical=3.dp))}}
                 Text(entry.title,fontSize=12.sp,lineHeight=16.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(top=5.dp))
@@ -114,10 +121,10 @@ import org.json.JSONObject
     val category=ContentCategory.parse(categoryName)?:ContentCategory.NOVEL
     var history by rememberSaveable{mutableStateOf(false)};var searching by rememberSaveable{mutableStateOf(false)};var query by rememberSaveable{mutableStateOf("")};var sorting by remember{mutableStateOf(false)};var alphabetical by rememberSaveable{mutableStateOf(false)}
     var onlyUpdates by rememberSaveable{mutableStateOf(false)}
-    LaunchedEffect(Unit){while(true){model.refreshLibrary();kotlinx.coroutines.delay(15000)}}
     val selected=(if(history)model.history.map{it.entry}else model.favorites)
     val counts=ContentCategory.entries.associateWith{c->selected.count{model.entryCategory(it)==c}}
-    val list=selected.filter{model.entryCategory(it)==category&&(query.isBlank()||it.title.contains(query,true))&&(history||!onlyUpdates||(model.followStates[it.key]?.newCount(model.history.find{p->p.entry.key==it.key})?:0)>0)}.let{if(alphabetical)it.sortedBy{e->e.title}else it}
+    val historyByKey=remember(model.history){model.history.associateBy{it.entry.key}}
+    val list=selected.filter{model.entryCategory(it)==category&&(query.isBlank()||it.title.contains(query,true))&&(history||!onlyUpdates||(model.followStates[it.key]?.newCount(historyByKey[it.key])?:0)>0)}.let{if(alphabetical)it.sortedBy{e->e.title}else it}
     val holder=rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize()){
         Row(Modifier.fillMaxWidth().heightIn(min=64.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){

@@ -9,6 +9,13 @@ fun ComposeTestRule.openDemoNovel(){
     NovelPreferences(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext).position(Demo.entries.last().key,0,0,0)
     onNodeWithContentDescription("切换小说分类").performClick()
     waitUntil(20000){onAllNodes(hasScrollToNodeAction()).fetchSemanticsNodes().isNotEmpty()}
-    onNode(hasScrollToNodeAction()).performScrollToNode(hasText("把今天寄给明天"))
-    onAllNodesWithText("把今天寄给明天").onLast().performClick()
+    onNode(hasScrollToNodeAction()).performScrollToNode(hasTestTag("entry:${Demo.entries.last().key}"))
+    onNodeWithTag("entry:${Demo.entries.last().key}").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick){it()}
+    try{waitUntil(20000){onAllNodesWithText("第一章 · 蓝色信箱").fetchSemanticsNodes().isNotEmpty()}}
+    finally{
+        val ins=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val dir=ins.targetContext.getExternalFilesDir(null)
+        java.io.File(dir,"reliability010-novel-navigation.txt").writeText(onRoot().printToString())
+        ins.uiAutomation.takeScreenshot()?.let{b->java.io.File(dir,"reliability010-novel-navigation.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}
+    }
 }

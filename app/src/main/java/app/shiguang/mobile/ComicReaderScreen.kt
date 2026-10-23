@@ -57,11 +57,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
     fun turn(next:Boolean){if(scope.coroutineContext.isActive)scope.launch{val target=pager.currentPage+if(next)1 else -1;if(target<0){if(index>0)change(index-1,true)}else if(target>pager.pageCount-1){if(index<chapters.lastIndex)change(index+1)}else pager.animateScrollToPage(target)}}
     fun selectMode(value:ComicTurnMode){if(value==mode)return;save();val image=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex else pager.currentPage;mode=value;prefs.edit().putString("comicTurnMode",value.name).apply();scope.launch{if(value==ComicTurnMode.SCROLL)list.scrollToItem(image.coerceIn(0,page?.images?.size?:0))else pager.scrollToPage(image.coerceIn(0,pager.pageCount-1))}}
     BackHandler{if(sheet.isNotEmpty())sheet=""else leave()}
-    LaunchedEffect(index,retry){ready=false;page=null;failure=null
+    LaunchedEffect(index,retry,source?.id){ready=false;page=null;failure=null
         try{val loaded=model.repo.readingPage(source?:error("原内容源已移除"),entry,chapters[index],force=retry>0);require(loaded.images.isNotEmpty()){"本话没有可显示的图片"};page=loaded
             val saved=prefs.getString(positionKey(),null)?.split(':');val image=if(openAtEnd)loaded.images.lastIndex else(saved?.getOrNull(0)?.toIntOrNull()?:0).coerceIn(0,loaded.images.size)
             withFrameNanos{};if(mode==ComicTurnMode.SCROLL){list.scrollToItem(image,if(openAtEnd)0 else saved?.getOrNull(1)?.toIntOrNull()?:0)
-                if(saved==null&&!openAtEnd){val old=model.store.progress().find{it.entry.key==entry.key&&it.line==line&&it.chapter==index};if(old!=null&&old.offset>0)list.scrollBy(old.offset.toFloat())}
+                if(saved==null&&!openAtEnd){val old=withContext(Dispatchers.IO){model.store.progressFor(entry.key)}?.takeIf{it.line==line&&it.chapter==index};if(old!=null&&old.offset>0)list.scrollBy(old.offset.toFloat())}
             }else pager.scrollToPage(image);openAtEnd=false;ready=true;save()
         }catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}
     }

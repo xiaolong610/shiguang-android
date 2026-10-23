@@ -23,7 +23,7 @@ class Layout07Test {
     private lateinit var favorites:List<Entry>
     private lateinit var fixtureSources:List<Source>
     private var hidden=emptyList<Pair<File,File>>()
-    private fun model(action:(AppModel)->Unit){compose.activityRule.scenario.onActivity{action(ViewModelProvider(it)[AppModel::class.java])};compose.waitForIdle()}
+    private fun model(action:(AppModel)->Unit){lateinit var m:AppModel;compose.activityRule.scenario.onActivity{m=ViewModelProvider(it)[AppModel::class.java]};compose.waitUntil(15000){m.libraryIdle};compose.activityRule.scenario.onActivity{action(m)};compose.waitForIdle();compose.waitUntil(15000){m.libraryIdle}}
     private fun capture(name:String){compose.waitForIdle();Thread.sleep(350);ins.uiAutomation.takeScreenshot()!!.let{b->File(context.getExternalFilesDir(null),"layout07-$name.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}}
     private fun category(c:ContentCategory){compose.onNodeWithContentDescription("切换${c.label}分类").performClick();compose.waitForIdle()}
     private fun nav(name:String){compose.onNodeWithContentDescription(name,useUnmergedTree=true).performClick();compose.waitForIdle()}

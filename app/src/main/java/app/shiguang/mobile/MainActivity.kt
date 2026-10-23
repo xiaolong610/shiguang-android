@@ -76,6 +76,17 @@ private val Cream=Color(0xFFE9EEE5)
         primaryContainer=Cream,onPrimaryContainer=Green,secondaryContainer=Cream,onSecondaryContainer=Green),content=content)
 }
 class MainActivity: ComponentActivity() {
+    var readerVolumeHandler:((Boolean)->Unit)?=null
+    override fun onKeyDown(keyCode:Int,event:android.view.KeyEvent):Boolean {
+        val handler=readerVolumeHandler
+        if(handler!=null&&keyCode in listOf(android.view.KeyEvent.KEYCODE_VOLUME_DOWN,android.view.KeyEvent.KEYCODE_VOLUME_UP)){
+            if(event.repeatCount==0)handler(keyCode==android.view.KeyEvent.KEYCODE_VOLUME_DOWN);return true
+        };return super.onKeyDown(keyCode,event)
+    }
+    override fun onKeyUp(keyCode:Int,event:android.view.KeyEvent):Boolean {
+        if(readerVolumeHandler!=null&&keyCode in listOf(android.view.KeyEvent.KEYCODE_VOLUME_DOWN,android.view.KeyEvent.KEYCODE_VOLUME_UP))return true
+        return super.onKeyUp(keyCode,event)
+    }
     override fun onResume(){super.onResume();ResolverWindow.activity=java.lang.ref.WeakReference(this)}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState);enableEdgeToEdge()
@@ -95,6 +106,7 @@ class MainActivity: ComponentActivity() {
     var openListening by rememberSaveable{mutableStateOf(false)}
     var importing by remember { mutableStateOf(false) }
     var direct by remember {mutableStateOf(false)}
+    var storage by remember{mutableStateOf((appContext as? android.app.Activity)?.intent?.getBooleanExtra("openDownloads",false)==true)}
     val snack=remember { SnackbarHostState() }
     val scope=rememberCoroutineScope()
     val playback by PlaybackSession.state.collectAsState()
@@ -103,7 +115,7 @@ class MainActivity: ComponentActivity() {
     if(narrationPlayer&&narration.entry!=null)NarrationPlayer(onClose={narrationPlayer=false},onCatalog={narrationPlayer=false;selected=narration.entry})
     val lifecycle=LocalLifecycleOwner.current
     DisposableEffect(lifecycle) {
-        val observer=LifecycleEventObserver { _,event -> if(event==Lifecycle.Event.ON_RESUME) model.refreshLibrary() }
+        val observer=LifecycleEventObserver { _,event -> if(event==Lifecycle.Event.ON_RESUME&&!model.libraryReady) model.refreshLibrary() }
         lifecycle.lifecycle.addObserver(observer);onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
     BackHandler(selected!=null || reader!=null) { if(reader!=null) {reader=null;model.refreshLibrary()} else selected=null }
@@ -119,7 +131,7 @@ class MainActivity: ComponentActivity() {
             }
             if(selected==null && reader==null) NavigationBar(containerColor=Paper,tonalElevation=0.dp,modifier=Modifier.navigationBarsPadding().height(64.dp),windowInsets=WindowInsets(0,0,0,0)) {
             listOf("发现" to Icons.Outlined.Explore,"书架" to Icons.Outlined.Bookmarks,"内容源" to Icons.Outlined.Layers).forEachIndexed { i,(label,icon) ->
-                NavigationBarItem(selected=tab==i,onClick={tab=i;model.refreshLibrary()},icon={Icon(icon,label)},label={Text(label,fontSize=11.sp)},colors=NavigationBarItemDefaults.colors(indicatorColor=Cream))
+                NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(icon,label)},label={Text(label,fontSize=11.sp)},colors=NavigationBarItemDefaults.colors(indicatorColor=Cream))
             }
         } } }
     ) { padding ->
@@ -132,7 +144,7 @@ class MainActivity: ComponentActivity() {
                     selected?.kind==Kind.NOVEL -> NovelDetailScreen(model,selected!!,onBack={selected=null},onRead={d,l,c->openListening=false;reader=Triple(d,l,c)},onListen={d,l,c->openListening=true;reader=Triple(d,l,c)},onSwitched={selected=it})
                     selected!=null -> DetailScreen(model,selected!!,onBack={selected=null},onRead={d,l,c->reader=Triple(d,l,c)},onSwitched={selected=it})
                     else -> browseState.SaveableStateProvider(tab){when(tab){
-                        0->CompactDiscoverScreen(model,onOpen={selected=it.copy(category=model.entryCategory(it))},onAddRules={tab=2;importing=true},onDirect={direct=true})
+                        0->CompactDiscoverScreen(model,onOpen={selected=it.copy(category=model.entryCategory(it))},onAddRules={tab=2;importing=true},onDirect={direct=true},onStorage={storage=true})
                         1->CompactLibraryScreen(model,onOpen={selected=it.copy(category=model.entryCategory(it))})
                         else->CompactSourcesScreen(model,onImport={importing=true},notify={scope.launch{snack.showSnackbar(it)}})
                     }}
@@ -140,6 +152,7 @@ class MainActivity: ComponentActivity() {
             }
         }
     }
+    if(storage)StorageSheet{storage=false}
     if(importing) RuleImportSheet(model,onClose={importing=false},notify={scope.launch {snack.showSnackbar(it)}})
     if(direct) {
         var url by remember {mutableStateOf("")};var issue by remember {mutableStateOf<String?>(null)}
@@ -157,7 +170,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
     BoxWithConstraints(modifier.clip(RoundedCornerShape(if(e.kind==Kind.NOVEL)3.dp else 18.dp)).background(Brush.linearGradient(colors)),contentAlignment=Alignment.Center) {
         val compact=maxWidth<118.dp
         val compactNovel=e.kind==Kind.NOVEL&&compact
-        if(e.cover.isNotBlank()) AsyncImage(model=e.cover,contentDescription=e.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
+        if(e.cover.isNotBlank()) AsyncImage(model=ImageRequest.Builder(LocalContext.current).data(e.cover).scale(coil.size.Scale.FIT).build(),contentDescription=e.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
         else if(compact)Column(Modifier.fillMaxSize().padding(horizontal=12.dp,vertical=30.dp),verticalArrangement=Arrangement.Center){Text(e.title,color=Color.White,fontSize=14.sp,lineHeight=21.sp,fontWeight=FontWeight.Medium,maxLines=3,overflow=TextOverflow.Ellipsis)}
         else if(e.kind==Kind.NOVEL)Column(Modifier.fillMaxSize().padding(if(compactNovel)PaddingValues(start=10.dp,top=12.dp,end=10.dp,bottom=32.dp)else PaddingValues(horizontal=16.dp,vertical=30.dp)),verticalArrangement=Arrangement.Center){
             Text(e.title,color=Color.White,fontSize=if(compactNovel)15.sp else 19.sp,fontWeight=FontWeight.Medium,lineHeight=if(compactNovel)21.sp else 26.sp,maxLines=if(compactNovel)3 else 4,overflow=TextOverflow.Ellipsis)
@@ -187,6 +200,8 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
     LaunchedEffect(e.key,retry) {
         detail=null;failure=null
         try {
+            while(!model.libraryReady&&model.libraryError.isBlank())kotlinx.coroutines.delay(10)
+            val source=model.source(e.sourceId)
             if(source==null) error("原内容源已移除，请重新导入后再打开")
             val loaded=model.repo.detail(source,e,force=retry>0)
             lineIndex=(model.history.find{it.entry.key==e.key}?.line ?: JSONObject(source.rules).optInt("preferredLine",0)).coerceIn(loaded.lines.indices)
@@ -204,7 +219,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
                 val chapter=d.lines[l].chapters[c]
                 val playSource=model.source(d.entry.sourceId)?:error("目标内容源已移除")
                 val url=chapter.url
-                val progress=model.store.progressFor(d.entry.key)?.takeIf{it.line==l&&it.chapter==c}
+                val progress=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){model.store.progressFor(d.entry.key)}?.takeIf{it.line==l&&it.chapter==c}
                 val intent=Intent(context,PlayerActivity::class.java).putExtra("entry",d.entry.json().toString()).putExtra("url",url)
                     .putExtra("line",l).putExtra("chapter",c).putExtra("offset",progress?.offset ?: 0L)
                     .putExtra("headers",JSONObject(model.repo.headers(playSource)).toString()).putExtra("original",chapter.url)

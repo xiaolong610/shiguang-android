@@ -26,7 +26,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
-data class PlaybackInfo(val entry:Entry?=null,val title:String="",val error:String?=null,val status:String="",val filter:Boolean=true,val report:AdFilterResult?=null,val hls:Boolean=false,val chapter:Int=0,val total:Int=1,val playing:Boolean=false,val requestId:String="",val rendered:Boolean=false,val page:String="",val pages:List<Chapter> = emptyList(),val speed:Float=1f,val boosting:Boolean=false,val line:Int=0,val positionMs:Long=0)
+data class PlaybackInfo(val entry:Entry?=null,val title:String="",val error:String?=null,val status:String="",val filter:Boolean=true,val report:AdFilterResult?=null,val hls:Boolean=false,val chapter:Int=0,val total:Int=1,val playing:Boolean=false,val requestId:String="",val rendered:Boolean=false,val page:String="",val pages:List<Chapter> = emptyList(),val speed:Float=1f,val boosting:Boolean=false,val line:Int=0,val positionMs:Long=0,val offlineId:String="")
 object PlaybackSession {
     val state=MutableStateFlow(PlaybackInfo())
     const val LOAD="app.shiguang.LOAD"
@@ -39,14 +39,14 @@ object PlaybackSession {
     const val BOOST_START="app.shiguang.BOOST_START"
     const val BOOST_END="app.shiguang.BOOST_END"
 }
-data class PlaybackRequest(val id:String,val entry:Entry,val pages:List<Chapter>,val chapter:Int,val line:Int,val offset:Long,val source:Source?,val headers:Map<String,String>,val knownAds:Boolean) {
-    fun json()=JSONObject().put("id",id).put("entry",entry.json()).put("pages",JSONArray().apply{pages.forEach{put(JSONObject().put("title",it.title).put("url",it.url))}}).put("chapter",chapter).put("line",line).put("offset",offset).put("source",source?.json()).put("headers",JSONObject(headers)).put("knownAds",knownAds)
+data class PlaybackRequest(val id:String,val entry:Entry,val pages:List<Chapter>,val chapter:Int,val line:Int,val offset:Long,val source:Source?,val headers:Map<String,String>,val knownAds:Boolean,val offlineId:String="",val offlineChapter:Int=-1) {
+    fun json()=JSONObject().put("id",id).put("entry",entry.json()).put("pages",JSONArray().apply{pages.forEach{put(JSONObject().put("title",it.title).put("url",it.url))}}).put("chapter",chapter).put("line",line).put("offset",offset).put("source",source?.json()).put("headers",JSONObject(headers)).put("knownAds",knownAds).put("offlineId",offlineId).put("offlineChapter",offlineChapter)
     companion object {
         fun parse(o:JSONObject):PlaybackRequest {
             val a=o.getJSONArray("pages");require(a.length() in 1..3000)
             val pages=(0 until a.length()).map{val ch=a.getJSONObject(it);Chapter(ch.getString("title"),ch.getString("url"))}
             val h=o.optJSONObject("headers") ?: JSONObject()
-            return PlaybackRequest(o.getString("id"),Entry.parse(o.getJSONObject("entry")),pages,o.getInt("chapter").coerceIn(pages.indices),o.optInt("line"),o.optLong("offset"),o.optJSONObject("source")?.let{SourceCodec.parse(it.toString()).single()},h.keys().asSequence().associateWith{h.getString(it)},o.optBoolean("knownAds"))
+            return PlaybackRequest(o.getString("id"),Entry.parse(o.getJSONObject("entry")),pages,o.getInt("chapter").coerceIn(pages.indices),o.optInt("line"),o.optLong("offset"),o.optJSONObject("source")?.let{SourceCodec.parse(it.toString()).single()},h.keys().asSequence().associateWith{h.getString(it)},o.optBoolean("knownAds"),o.optString("offlineId"),o.optInt("offlineChapter",-1))
         }
     }
 }
@@ -113,13 +113,13 @@ class PlaybackService:MediaSessionService() {
         }).build()
         exo.addListener(object:Player.Listener {
             override fun onRenderedFirstFrame(){update{it.copy(rendered=true)}}
-            override fun onPlayerError(error:PlaybackException){update{it.copy(error="播放失败：${error.errorCodeName}。可重新解析或换线路。",status="",playing=false)}}
+            override fun onPlayerError(error:PlaybackException){update{it.copy(error=if(request?.offlineId?.isNotBlank()==true)"离线文件不完整或无法解码，请删除此下载后重新下载。"else"播放失败：${error.errorCodeName}。可重新解析或换线路。",status="",playing=false)}}
             override fun onIsPlayingChanged(isPlaying:Boolean){if(!isPlaying)endBoost();update{it.copy(playing=isPlaying)}}
             override fun onPlaybackParametersChanged(playbackParameters:PlaybackParameters){if(temporaryBase==null)prefs.edit().putFloat("speed",playbackParameters.speed).apply();update{it.copy(speed=playbackParameters.speed)}}
             override fun onMediaItemTransition(item:MediaItem?,reason:Int) {
                 val r=request ?: return
                 if(directList){
-                    if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)store.save(r.entry,r.line,trackedChapter,lastDuration.coerceAtLeast(lastPosition),r.pages[trackedChapter].title)
+                    if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)store.save(r.entry,r.line,if(r.offlineChapter>=0)r.offlineChapter else trackedChapter,lastDuration.coerceAtLeast(lastPosition),r.pages[trackedChapter].title)
                     trackedChapter=exo.currentMediaItemIndex.coerceIn(r.pages.indices)
                 }
                 update{it.copy(title=item?.mediaMetadata?.title?.toString().orEmpty(),chapter=trackedChapter,hls=hls(item),report=reports[key()],page=r.pages[trackedChapter].url)}
@@ -147,9 +147,9 @@ class PlaybackService:MediaSessionService() {
         }
         return CacheDataSource.Factory().setCache(VideoCache.get(this)).setUpstreamDataSourceFactory(scoped).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
-    private fun mediaSource(r:PlaybackRequest,ch:Chapter,video:ResolvedVideo):MediaSource {
-        val item=MediaItem.Builder().setMediaId(video.url).setUri(video.url).apply{if(video.mime.isNotBlank())setMimeType(video.mime)}.setMediaMetadata(MediaMetadata.Builder().setTitle(ch.title).setArtist(r.entry.title).build()).build()
-        val data=dataFactory(video.headers,video.url)
+    private fun mediaSource(r:PlaybackRequest,ch:Chapter,video:ResolvedVideo,download:androidx.media3.exoplayer.offline.DownloadRequest?=null):MediaSource {
+        val item=(download?.toMediaItem()?.buildUpon()?:MediaItem.Builder()).setMediaId(video.url).setUri(video.url).apply{if(video.mime.isNotBlank())setMimeType(video.mime)}.setMediaMetadata(MediaMetadata.Builder().setTitle(ch.title).setArtist(r.entry.title).build()).build()
+        val data=if(download!=null)CacheDataSource.Factory().setCache(VideoDownloads.cache(this)).setUpstreamDataSourceFactory(null).setCacheWriteDataSinkFactory(null)else dataFactory(video.headers,video.url)
         if(!hls(item))return DefaultMediaSourceFactory(data).createMediaSource(item)
         val factory=AdFilteringPlaylistParserFactory({filter.get()},r.knownAds){_,report->Handler(Looper.getMainLooper()).post{
             if(request?.id==r.id){reports[video.url]=report;if(key()==video.url)update{it.copy(report=report)}}
@@ -159,11 +159,15 @@ class PlaybackService:MediaSessionService() {
     private fun load(r:PlaybackRequest) {
         endBoost();save();resolver?.cancel();exo.pause();exo.stop();exo.clearMediaItems();pendingSeek=null
         request=r;trackedChapter=r.chapter;lastPosition=r.offset;lastDuration=0;reports.clear()
-        PlaybackSession.state.value=PlaybackInfo(r.entry,r.pages[r.chapter].title,status="正在准备播放…",filter=filter.get(),chapter=r.chapter,total=r.pages.size,requestId=r.id,page=r.pages[r.chapter].url,pages=r.pages,speed=exo.playbackParameters.speed,line=r.line,positionMs=r.offset)
+        PlaybackSession.state.value=PlaybackInfo(r.entry,r.pages[r.chapter].title,status="正在准备播放…",filter=filter.get(),chapter=r.chapter,total=r.pages.size,requestId=r.id,page=r.pages[r.chapter].url,pages=r.pages,speed=exo.playbackParameters.speed,line=r.line,positionMs=r.offset,offlineId=r.offlineId)
         resolver=scope.launch {
             try {
-                directList=r.pages.all{WebVideoResolver.direct(it.url)||it.url.startsWith("asset:///")}
-                val sources=if(directList)r.pages.map {ch->mediaSource(r,ch,ResolvedVideo(ch.url,r.headers))} else {
+                withContext(Dispatchers.IO){if(r.offlineId.isBlank())VideoCache.get(this@PlaybackService)else VideoDownloads.cache(this@PlaybackService)}
+                directList=r.offlineId.isBlank()&&r.pages.all{WebVideoResolver.direct(it.url)||it.url.startsWith("asset:///")}
+                val sources=if(r.offlineId.isNotBlank()){
+                    val downloaded=VideoDownloads.completed(this@PlaybackService,r.offlineId)
+                    listOf(mediaSource(r,r.pages[r.chapter],ResolvedVideo(downloaded.uri.toString(),emptyMap(),downloaded.mimeType.orEmpty()),downloaded))
+                }else if(directList)r.pages.map {ch->mediaSource(r,ch,ResolvedVideo(ch.url,r.headers))} else {
                     val page=r.pages[r.chapter]
                     val video=WebVideoResolver(this@PlaybackService).resolve(r.source,page.url){status->update{it.copy(status=status)}}
                     listOf(mediaSource(r,page,video.copy(headers=r.headers+video.headers)))
@@ -188,7 +192,7 @@ class PlaybackService:MediaSessionService() {
     private fun save() {
         val r=request ?: return
         if(pendingSeek!=null||exo.currentMediaItem==null)return
-        lastPosition=originalPosition();store.save(r.entry,r.line,trackedChapter,lastPosition,r.pages[trackedChapter].title);update{it.copy(positionMs=lastPosition)}
+        lastPosition=originalPosition();store.save(r.entry,r.line,if(r.offlineChapter>=0)r.offlineChapter else trackedChapter,lastPosition,r.pages[trackedChapter].title);update{it.copy(positionMs=lastPosition)}
     }
     override fun onTaskRemoved(rootIntent:Intent?) {if(!exo.playWhenReady||exo.mediaItemCount==0)stopSelf()}
     override fun onDestroy(){save();request=null;scope.cancel();session.release();exo.release();store.close();PlaybackSession.state.value=PlaybackInfo();super.onDestroy()}

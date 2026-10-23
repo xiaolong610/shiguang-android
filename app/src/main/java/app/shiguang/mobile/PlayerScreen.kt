@@ -28,7 +28,7 @@ internal fun episodeOrder(size:Int,reversed:Boolean):List<Int> = (0 until size).
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun CompactPlayerScreen(info:PlaybackInfo,player:Player?,landscape:Boolean,inPip:Boolean,background:Boolean,autoPip:Boolean,connectionError:String?,onBack:()->Unit,onPip:()->Unit,onFullscreen:()->Unit,onPick:(Int)->Unit,onFilter:()->Unit,onRetry:()->Unit,onBrowser:()->Unit,onStop:()->Unit,onBackground:(Boolean)->Unit,onAutoPip:(Boolean)->Unit,onBoost:(Boolean)->Unit={},onSources:()->Unit={}){
+@Composable internal fun CompactPlayerScreen(info:PlaybackInfo,player:Player?,landscape:Boolean,inPip:Boolean,background:Boolean,autoPip:Boolean,connectionError:String?,onBack:()->Unit,onPip:()->Unit,onFullscreen:()->Unit,onPick:(Int)->Unit,onFilter:()->Unit,onRetry:()->Unit,onBrowser:()->Unit,onStop:()->Unit,onBackground:(Boolean)->Unit,onAutoPip:(Boolean)->Unit,onBoost:(Boolean)->Unit={},onSources:()->Unit={},onDownload:()->Unit={}){
     val context=LocalContext.current;val prefs=remember{context.getSharedPreferences("player",0)}
     var settings by rememberSaveable{mutableStateOf(false)};var reverse by rememberSaveable{mutableStateOf(prefs.getBoolean("episodeReverse",false))};val speed=info.speed;var controls by remember{mutableStateOf(true)}
     LaunchedEffect(inPip){if(inPip)settings=false}
@@ -67,6 +67,7 @@ internal fun episodeOrder(size:Int,reversed:Boolean):List<Int> = (0 until size).
             Text("播放设置",fontSize=21.sp);Text("倍速",fontSize=12.sp,modifier=Modifier.padding(top=16.dp))
             Row(Modifier.fillMaxWidth()){listOf(.75f,1f,1.25f,1.5f,2f).forEach{rate->TextButton(onClick={player?.setPlaybackSpeed(rate)},modifier=Modifier.weight(1f),contentPadding=PaddingValues(2.dp)){Text("${rate}×",fontSize=12.sp,color=if(speed==rate)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)}}}
             Text("画面中央双击播放 / 暂停；长按临时加速，松手恢复。",fontSize=11.sp,modifier=Modifier.padding(vertical=8.dp))
+            TextButton(onClick={settings=false;onDownload()},enabled=info.offlineId.isBlank()&&info.entry?.sourceId?.startsWith("demo-")!=true){Text(if(info.offlineId.isNotBlank())"当前为离线视频"else"下载当前集 / 离线观看")}
             TextButton(onClick={settings=false;onSources()}){Text("查找其他来源 / 换源")}
             Row(verticalAlignment=Alignment.CenterVertically){Text("后台播放",Modifier.weight(1f));Switch(background,onCheckedChange=onBackground)}
             Row(verticalAlignment=Alignment.CenterVertically){Text("离开时自动小窗",Modifier.weight(1f));Switch(autoPip,onCheckedChange=onAutoPip)}

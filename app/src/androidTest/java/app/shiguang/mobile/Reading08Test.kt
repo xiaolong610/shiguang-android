@@ -26,7 +26,7 @@ class Reading08Test{
     private val ins get()=InstrumentationRegistry.getInstrumentation();private val context get()=ins.targetContext
     private lateinit var server:MockWebServer;private lateinit var source:Source
     private lateinit var novel:Entry;private lateinit var comic:Entry;private lateinit var video:Entry
-    private fun model(action:(AppModel)->Unit){compose.activityRule.scenario.onActivity{action(ViewModelProvider(it)[AppModel::class.java])};compose.waitForIdle()}
+    private fun model(action:(AppModel)->Unit){lateinit var m:AppModel;compose.activityRule.scenario.onActivity{m=ViewModelProvider(it)[AppModel::class.java]};compose.waitUntil(15000){m.libraryIdle};compose.activityRule.scenario.onActivity{action(m)};compose.waitForIdle();compose.waitUntil(15000){m.libraryIdle}}
     private fun capture(name:String){compose.waitForIdle();Thread.sleep(200);ins.uiAutomation.takeScreenshot()!!.let{b->File(context.getExternalFilesDir(null),"reading08-$name.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}}
     private fun dismiss(){compose.activityRule.scenario.onActivity{it.onBackPressedDispatcher.onBackPressed()};compose.waitForIdle()}
     @Before fun setup(){

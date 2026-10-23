@@ -51,5 +51,7 @@ class ReadingPageCache(private val maxBytes:Int=12*1024*1024,private val maxEntr
         }}}
     }
     fun close(){scope.cancel()}
+    suspend fun clear(){mutex.withLock{ready.clear();bytes=0}}
+    suspend fun sizeBytes():Long=mutex.withLock{bytes.toLong()}
     companion object {val shared=ReadingPageCache()}
 }

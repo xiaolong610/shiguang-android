@@ -20,7 +20,7 @@ class Search091StoreTest {
                 store.writableDatabase.execSQL("DROP TABLE search_catalog");store.writableDatabase.execSQL("DROP TABLE source_health");store.writableDatabase.version=3
             }
             LibraryStore(context,name).use{store->
-                assertEquals(4,store.readableDatabase.version);assertEquals(e.key,store.favorites().single().key)
+                assertEquals(5,store.readableDatabase.version);assertEquals(e.key,store.favorites().single().key)
                 assertEquals(5432L,store.progressFor(e.key)!!.offset);assertEquals("第三集",store.progressFor(e.key)!!.chapterTitle)
                 store.recordSearch(SearchOutcome(s,listOf(e),elapsedMs=120),now=1_000_000)
                 val cached=store.searchCatalog(ContentCategory.VIDEO,listOf(s),now=1_000_001)

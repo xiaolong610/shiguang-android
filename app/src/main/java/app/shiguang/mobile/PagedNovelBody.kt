@@ -33,11 +33,11 @@ fun measuredPageRanges(textLength:Int,lineEnds:List<Int>,lineTops:List<Float>,li
 
 @Composable fun PagedNovelBody(key:String,chapter:Int,title:String,paragraphs:List<String>,mode:NovelTurnMode,
     font:Float,spacing:Float,serif:Boolean,margin:Int,fg:Color,initialItem:Int,initialOffset:Int,
-    requestedParagraph:Int?,requestId:Int,onPosition:(Int,Int,Int,Int)->Unit,onMenu:()->Unit,onPreviousChapter:()->Unit,onNextChapter:()->Unit){
+    requestedParagraph:Int?,requestId:Int,onPosition:(Int,Int,Int,Int)->Unit,onMenu:()->Unit,onPreviousChapter:()->Unit,onNextChapter:()->Unit,fontFamily:FontFamily?=null,turnRequest:Pair<Int,Boolean>?=null){
     val density=LocalDensity.current;val measurer=rememberTextMeasurer(cacheSize=2);val scope=rememberCoroutineScope()
     val starts=remember(title,paragraphs){val a=mutableListOf<Int>();var n=title.length+2;paragraphs.forEach{a+=n;n+=it.length+4};a}
     val text=remember(title,paragraphs){buildAnnotatedString{withStyle(SpanStyle(fontWeight=FontWeight.SemiBold)){append(title)};append("\n\n");paragraphs.forEachIndexed{i,p->if(i>0)append("\n\n");append("　　");append(p)}}}
-    val style=TextStyle(fontSize=font.sp,lineHeight=(font*spacing).sp,fontFamily=if(serif)FontFamily.Serif else FontFamily.Default,textAlign=TextAlign.Justify,color=fg)
+    val style=TextStyle(fontSize=font.sp,lineHeight=(font*spacing).sp,fontFamily=fontFamily?:if(serif)FontFamily.Serif else FontFamily.Default,textAlign=TextAlign.Justify,color=fg)
     var anchor by rememberSaveable(key,chapter){mutableIntStateOf(-1)}
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal=margin.dp,vertical=6.dp)){
         val width=with(density){maxWidth.roundToPx()}.coerceAtLeast(1);val height=with(density){maxHeight.toPx()}.coerceAtLeast(1f)
@@ -55,6 +55,7 @@ fun measuredPageRanges(textLength:Int,lineEnds:List<Int>,lineTops:List<Float>,li
         fun turn(next:Boolean){scope.launch{val target=pager.currentPage+if(next)1 else -1
             when{target<0->onPreviousChapter();target>ranges.lastIndex->onNextChapter();mode==NovelTurnMode.TAP->pager.scrollToPage(target);else->pager.animateScrollToPage(target)}
         }}
+        LaunchedEffect(turnRequest?.first){turnRequest?.let{turn(it.second)}}
         LaunchedEffect(layout,height){pager.scrollToPage(pageFor(if(anchor>=0)anchor else offsetFor(initialItem,initialOffset)))}
         LaunchedEffect(requestId){if(requestedParagraph!=null){val p=requestedParagraph.coerceIn(0,starts.lastIndex.coerceAtLeast(0));pager.scrollToPage(pageFor(starts.getOrElse(p){0}))}}
         val positionCallback by rememberUpdatedState(onPosition)

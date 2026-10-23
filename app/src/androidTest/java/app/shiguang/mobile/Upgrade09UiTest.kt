@@ -22,7 +22,7 @@ class Upgrade09UiTest {
     private val ins get()=InstrumentationRegistry.getInstrumentation()
     private val context get()=ins.targetContext
     private val sourceIds=mutableListOf<String>();private val entryKeys=mutableListOf<Entry>()
-    private fun model(action:(AppModel)->Unit){compose.activityRule.scenario.onActivity{action(ViewModelProvider(it)[AppModel::class.java])};compose.waitForIdle()}
+    private fun model(action:(AppModel)->Unit){lateinit var m:AppModel;compose.activityRule.scenario.onActivity{m=ViewModelProvider(it)[AppModel::class.java]};compose.waitUntil(15000){m.libraryIdle};compose.activityRule.scenario.onActivity{action(m)};compose.waitForIdle();compose.waitUntil(15000){m.libraryIdle}}
     private fun capture(name:String){compose.waitForIdle();Thread.sleep(300);ins.uiAutomation.takeScreenshot()!!.let{b->File(context.getExternalFilesDir(null),"upgrade09-$name.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}}
     @After fun clean(){model{m->entryKeys.forEach{m.store.favorite(it,false);m.store.writableDatabase.delete("progress","id=?",arrayOf(it.key))};sourceIds.forEach{m.store.deleteSource(it)};m.refreshLibrary()}}
     @Test fun shelfShowsNewAndUnreadCountsAndUpdatesFilterStopsShowingReadWork(){

@@ -37,6 +37,9 @@ object NovelText {
 data class ReadingMark(val chapter:Int,val paragraph:Int,val snippet:String,val created:Long)
 class NovelPreferences(context:Context) {
     private val p=context.getSharedPreferences("novel-reading",0)
+    var volumeKeys:Boolean get()=p.getBoolean("volumeKeys",false);set(v){p.edit().putBoolean("volumeKeys",v).apply()}
+    var autoSpeed:Float get()=p.getFloat("autoSpeed",30f).coerceIn(10f,90f);set(v){p.edit().putFloat("autoSpeed",v.coerceIn(10f,90f)).apply()}
+    var fontFile:String get()=p.getString("fontFile","").orEmpty();set(v){p.edit().putString("fontFile",v).apply()}
     var turnMode:NovelTurnMode get()=NovelTurnMode.parse(p.getString("turnMode",null));set(v){p.edit().putString("turnMode",v.name).apply()}
     var font:Float get()=p.getFloat("font",20f).coerceIn(16f,32f);set(v){p.edit().putFloat("font",v.coerceIn(16f,32f)).apply()}
     var spacing:Float get()=p.getFloat("spacing",1.9f).coerceIn(1.4f,2.4f);set(v){p.edit().putFloat("spacing",v.coerceIn(1.4f,2.4f)).apply()}

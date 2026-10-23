@@ -15,5 +15,7 @@ class DetailMemoryCache(private val now:()->Long={System.nanoTime()/1_000_000}) 
         items[key]=Item(detail,now(),weight);bytes+=weight
         while(items.size>24||bytes>8*1024*1024){val first=items.entries.first();bytes-=first.value.weight;items.remove(first.key)}
     }
+    @Synchronized fun clear(){items.clear();bytes=0}
+    @Synchronized fun sizeBytes()=bytes.toLong()
     companion object {val shared=DetailMemoryCache()}
 }

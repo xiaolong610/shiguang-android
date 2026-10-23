@@ -26,12 +26,12 @@ data class Source(
     fun json() = JSONObject().put("id", id).put("name", name).put("kind", kind.name.lowercase())
         .put("engine", engine).put("url", url).put("enabled", enabled).put("rules", JSONObject(rules))
     val host: String get() = runCatching { URI(url).host }.getOrNull() ?: "本地示例"
-    val category:ContentCategory get(){
-        if(kind!=Kind.VIDEO)return ContentCategory.fromKind(kind)
+    val category:ContentCategory by lazy(LazyThreadSafetyMode.PUBLICATION){
+        if(kind!=Kind.VIDEO)return@lazy ContentCategory.fromKind(kind)
         val r=runCatching{JSONObject(rules)}.getOrElse{JSONObject()}
         val original=r.optJSONObject("original")
         val explicit=sequenceOf(r.optString("category"),r.optString("type"),original?.optString("category").orEmpty(),original?.optString("type").orEmpty()).mapNotNull{ContentCategory.parse(it)}.firstOrNull{it.kind==kind}
-        return explicit ?: if(engine=="kazumi")ContentCategory.ANIME else ContentCategory.VIDEO
+        explicit ?: if(engine=="kazumi")ContentCategory.ANIME else ContentCategory.VIDEO
     }
 }
 data class Entry(

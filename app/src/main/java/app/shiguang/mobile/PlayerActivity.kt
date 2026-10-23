@@ -1,5 +1,8 @@
 package app.shiguang.mobile
 
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.*
+
 import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Intent
@@ -68,6 +71,7 @@ class PlayerActivity:ComponentActivity() {
             val landscape=LocalConfiguration.current.orientation==Configuration.ORIENTATION_LANDSCAPE
             var filterDialog by remember{mutableStateOf(false)}
             var sourceSheet by remember{mutableStateOf(false)}
+            var downloadMessage by remember{mutableStateOf("")};var preparingDownload by remember{mutableStateOf(false)};var downloadJob by remember{mutableStateOf<Job?>(null)};val downloadScope=rememberCoroutineScope()
             BackHandler(!inPip){returnToWindow()}
             LaunchedEffect(info.playing,autoPip){updatePip()}
             LaunchedEffect(landscape,inPip){val bars=WindowInsetsControllerCompat(window,window.decorView);bars.systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE;if(landscape&&!inPip)bars.hide(WindowInsetsCompat.Type.systemBars()) else bars.show(WindowInsetsCompat.Type.systemBars())}
@@ -79,13 +83,15 @@ class PlayerActivity:ComponentActivity() {
                 onBrowser={openBrowser(this@PlayerActivity,info.page)},onStop={command(PlaybackSession.STOP);finish()},
                 onBackground={background=it;prefs.edit().putBoolean("backgroundPlayback",it).apply()},
                 onAutoPip={autoPip=it;prefs.edit().putBoolean("autoPip",it).apply();updatePip()},
-                onBoost={command(if(it)PlaybackSession.BOOST_START else PlaybackSession.BOOST_END)},onSources={sourceSheet=true})
+                onBoost={command(if(it)PlaybackSession.BOOST_START else PlaybackSession.BOOST_END)},onSources={sourceSheet=true},onDownload={if(!preparingDownload&&info.entry!=null){preparingDownload=true;downloadMessage="正在准备下载…";downloadJob=downloadScope.launch{try{while(!model.libraryReady&&model.libraryError.isBlank())delay(20);downloadMessage=VideoDownloads.add(this@PlayerActivity,model.source(info.entry!!.sourceId),info.entry!!,info.pages[info.chapter],info.chapter,info.line)}catch(e:CancellationException){throw e}catch(e:Exception){downloadMessage=ContentRepository.friendlyError(e)}finally{preparingDownload=false}}}})
+            if(downloadMessage.isNotBlank())AlertDialog(onDismissRequest={downloadJob?.cancel();downloadMessage=""},title={Text("视频下载")},text={Text(downloadMessage)},dismissButton={if(preparingDownload)TextButton(onClick={downloadJob?.cancel();downloadMessage=""}){Text("取消准备")}},confirmButton={TextButton(enabled=!preparingDownload,onClick={downloadMessage=""}){Text("知道了")}})
             if(sourceSheet&&info.entry!=null)SourceSwitchSheet(model,info.entry!!,Detail(info.entry!!,listOf(Line("当前线路",info.pages))),
                 progressOverride=Progress(info.entry!!,0,info.chapter,info.positionMs,System.currentTimeMillis(),info.title),onDismiss={sourceSheet=false}){result->
-                model.applySourceSwitch(info.entry!!,result);sourceSheet=false
+                downloadScope.launch{try{model.applySourceSwitch(info.entry!!,result).await();sourceSheet=false
                 val source=model.source(result.detail.entry.sourceId)
                 val request=PlaybackRequest(UUID.randomUUID().toString(),result.detail.entry,result.detail.lines[result.line].chapters,result.chapter,result.line,result.offset,source,source?.let{model.repo.headers(it)}?:emptyMap(),source?.let{JSONObject(it.rules).optBoolean("knownAds")}?:false)
                 command(PlaybackSession.LOAD,Bundle().apply{putString("request",request.json().toString())})
+                }catch(e:CancellationException){throw e}catch(e:Exception){connectionError=ContentRepository.friendlyError(e)}}
             }
             if(filterDialog)AlertDialog(onDismissRequest={filterDialog=false},title={Text("广告过滤")},text={Text("只过滤有充分依据的HLS插播片段。切片不等于广告；压进画面的广告无法识别。若误删，可关闭过滤并重载，进度按原时间线保存。\n\n"+(info.report?.message() ?: ""))},confirmButton={TextButton(onClick={command(PlaybackSession.FILTER);filterDialog=false}){Text(if(info.filter)"关闭过滤并重载" else "开启过滤并重载")}},dismissButton={TextButton(onClick={filterDialog=false}){Text("返回播放")}})
         }}
@@ -98,18 +104,20 @@ class PlayerActivity:ComponentActivity() {
     private fun submitIntent() {
         if(requested||!intent.hasExtra("entry"))return
         requested=true
-        try {
-            val entry=Entry.parse(JSONObject(intent.getStringExtra("entry") ?: ""))
-            val list=JSONArray(intent.getStringExtra("playlist") ?: "[]")
-            val pages=if(list.length()>0)(0 until list.length()).map{val c=list.getJSONObject(it);Chapter(c.getString("title"),c.getString("url"))}else listOf(Chapter(intent.getStringExtra("title") ?: entry.title,intent.getStringExtra("url") ?: ""))
-            val chapter=if(list.length()>0)intent.getIntExtra("chapter",0).coerceIn(pages.indices) else 0
-            val storedChapter=intent.getIntExtra("chapter",0);val line=intent.getIntExtra("line",0)
-            val offset=LibraryStore(this).use{store->store.progress().find{it.entry.key==entry.key&&it.line==line&&it.chapter==storedChapter}?.offset} ?: intent.getLongExtra("offset",0)
-            val h=JSONObject(intent.getStringExtra("headers") ?: "{}")
-            val source=intent.getStringExtra("source")?.let{SourceCodec.parse(it).single()}
-            val request=PlaybackRequest(requestId,entry,pages,chapter,line,offset,source,h.keys().asSequence().associateWith{h.getString(it)},intent.getBooleanExtra("knownAdSource",false))
-            command(PlaybackSession.LOAD,Bundle().apply{putString("request",request.json().toString())})
-        }catch(e:Exception){connectionError=ContentRepository.friendlyError(e)}
+        val loadId=requestId;val currentIntent=Intent(intent)
+        lifecycleScope.launch{try {
+            val request=withContext(Dispatchers.IO){
+            val entry=Entry.parse(JSONObject(currentIntent.getStringExtra("entry") ?: ""))
+            val list=JSONArray(currentIntent.getStringExtra("playlist") ?: "[]")
+            val pages=if(list.length()>0)(0 until list.length()).map{val c=list.getJSONObject(it);Chapter(c.getString("title"),c.getString("url"))}else listOf(Chapter(currentIntent.getStringExtra("title") ?: entry.title,currentIntent.getStringExtra("url") ?: ""))
+            val chapter=if(list.length()>0)currentIntent.getIntExtra("chapter",0).coerceIn(pages.indices) else 0
+            val storedChapter=currentIntent.getIntExtra("chapter",0);val line=currentIntent.getIntExtra("line",0)
+            val offset=LibraryStore(this@PlayerActivity).use{store->store.progressFor(entry.key)?.takeIf{it.line==line&&it.chapter==storedChapter}?.offset} ?: currentIntent.getLongExtra("offset",0)
+            val h=JSONObject(currentIntent.getStringExtra("headers") ?: "{}")
+            val source=currentIntent.getStringExtra("source")?.let{SourceCodec.parse(it).single()}
+            PlaybackRequest(loadId,entry,pages,chapter,line,offset,source,h.keys().asSequence().associateWith{h.getString(it)},currentIntent.getBooleanExtra("knownAdSource",false),currentIntent.getStringExtra("offlineId").orEmpty(),if(currentIntent.hasExtra("offlineId"))storedChapter else -1)
+            };if(requestId==loadId)command(PlaybackSession.LOAD,Bundle().apply{putString("request",request.json().toString())})
+        }catch(e:CancellationException){throw e}catch(e:Exception){connectionError=ContentRepository.friendlyError(e)}}
     }
     override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);if(intent.hasExtra("entry")){requestId=UUID.randomUUID().toString();requested=false;submitIntent()}}
     private fun params():PictureInPictureParams {

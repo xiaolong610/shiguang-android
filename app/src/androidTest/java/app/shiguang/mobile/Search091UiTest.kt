@@ -21,7 +21,7 @@ class Search091UiTest {
     private val ins get()=InstrumentationRegistry.getInstrumentation()
     private val context get()=ins.targetContext
     private val fixture=mutableListOf<Source>();private lateinit var server:MockWebServer
-    private fun model(action:(AppModel)->Unit){compose.activityRule.scenario.onActivity{action(ViewModelProvider(it)[AppModel::class.java])};compose.waitForIdle()}
+    private fun model(action:(AppModel)->Unit){lateinit var m:AppModel;compose.activityRule.scenario.onActivity{m=ViewModelProvider(it)[AppModel::class.java]};compose.waitUntil(15000){m.libraryIdle};compose.activityRule.scenario.onActivity{action(m)};compose.waitForIdle();compose.waitUntil(15000){m.libraryIdle}}
     private fun source(name:String,path:String,category:ContentCategory=ContentCategory.VIDEO):Source {
         val rules=JSONObject().put("category",category.name.lowercase())
         if(category.kind!=Kind.VIDEO)rules.put("searchUrl","$path?q={query}").put("list",".book").put("title","a").put("chapters","a.chapter").put("content","main").put("images","img")
