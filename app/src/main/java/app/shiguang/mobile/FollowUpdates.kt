@@ -47,7 +47,7 @@ class FollowManager(private val context:Context,private val repo:ContentReposito
                     if(!force&&old!=null&&System.currentTimeMillis()-old.checked<6*60*60*1000L){skipped++;continue}
                     try{
                         val source=sources[entry.sourceId]?.takeIf{it.enabled}?:error("内容源已停用或移除")
-                        val detail=repo.detail(source,entry)
+                        val detail=repo.detail(source,entry,force=true)
                         require(detail.lines.isNotEmpty()&&detail.lines.any{it.chapters.isNotEmpty()}){"目录为空"}
                         store.transaction{
                             if(store.favorites().none{it.key==entry.key})return@transaction

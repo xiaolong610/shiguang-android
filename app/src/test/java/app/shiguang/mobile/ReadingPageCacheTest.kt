@@ -33,4 +33,12 @@ class ReadingPageCacheTest {
             now=11;assertEquals("到期刷新",cache.load("a"){PageContent("到期刷新")}.text)
         }finally{cache.close()}
     }
+    @Test fun leavingAllReadersCancelsAbandonedNetworkWorkAndFreesLoadSlots()=runBlocking {
+        val cache=ReadingPageCache();val started=CompletableDeferred<Unit>();val stopped=CompletableDeferred<Unit>()
+        try{
+            val old=async{cache.load("abandoned"){started.complete(Unit);try{awaitCancellation()}finally{stopped.complete(Unit)}}}
+            started.await();old.cancelAndJoin();withTimeout(2000){stopped.await()}
+            assertEquals("新章节",withTimeout(1000){cache.load("new"){PageContent("新章节")}}.text)
+        }finally{cache.close()}
+    }
 }

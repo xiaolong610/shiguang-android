@@ -28,7 +28,7 @@ import kotlinx.coroutines.CancellationException
     val context=LocalContext.current;val sortPrefs=remember{context.getSharedPreferences("chapter-order",0)}
     var reverse by remember{mutableStateOf(sortPrefs.getBoolean(Kind.NOVEL.name,false))}
     val blue=Color(0xFF3975C6);val muted=Color(0xFF888A8D);val paper=Color(0xFFFAFAF8)
-    LaunchedEffect(entry.key,retry){failure=null;try{detail=model.repo.detail(model.source(entry.sourceId)?:error("原内容源已移除"),entry);line=(model.history.find{it.entry.key==entry.key}?.line?:0).coerceIn(detail!!.lines.indices);model.recordDetail(detail!!,line)}catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}}
+    LaunchedEffect(entry.key,retry){failure=null;try{detail=model.repo.detail(model.source(entry.sourceId)?:error("原内容源已移除"),entry,force=retry>0);line=(model.history.find{it.entry.key==entry.key}?.line?:0).coerceIn(detail!!.lines.indices);model.recordDetail(detail!!,line)}catch(e:CancellationException){throw e}catch(e:Exception){failure=ContentRepository.friendlyError(e)}}
     val saved=model.favorites.any{it.key==entry.key}
     Column(Modifier.fillMaxSize().background(paper).navigationBarsPadding()){
         TopAppBar(title={Text("书籍",fontSize=16.sp)},navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回")}},actions={FavoriteButton(saved){model.favorite(detail?.entry?:entry,detail)}},windowInsets=WindowInsets(0,0,0,0),colors=TopAppBarDefaults.topAppBarColors(containerColor=paper))

@@ -83,7 +83,8 @@ class Reading08Test{
         val entry=Demo.entries[1].copy(id="legacy-${System.nanoTime()}")
         val key="comic:${entry.key}:0:0";context.getSharedPreferences("reader",0).edit().remove(key).apply()
         model{m->m.store.save(entry,0,0,700);compose.activity.setContent{ShiguangTheme{ComicReaderScreen(m,Demo.detail(entry),0,0,{})}}}
-        compose.waitUntil(15000){val p=context.getSharedPreferences("reader",0).getString(key,null);p!=null&&p!="0:0"}
+        try{compose.waitUntil(15000){val p=context.getSharedPreferences("reader",0).getString(key,null);p!=null&&p!="0:0"}}
+        finally{model{compose.activity.setContent{androidx.compose.material3.Text("迁移检查完成")}};model{it.store.writableDatabase.delete("progress","id=?",arrayOf(entry.key))};context.getSharedPreferences("reader",0).edit().remove(key).apply()}
     }
     @Test fun realNovelPagedModeAndPositionSurviveActivityRecreation(){
         NovelPreferences(context).turnMode=NovelTurnMode.SLIDE

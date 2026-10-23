@@ -37,13 +37,17 @@ class AppSmokeTest {
     }
     @Test fun canReadOfflineComic() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
+        // Old migration fixtures share the demo title and now appear in history-backed discovery.
+        LibraryStore(context).use{it.writableDatabase.delete("progress","id LIKE ?",arrayOf("demo-COMIC::legacy-%"))}
+        compose.activityRule.scenario.onActivity{androidx.lifecycle.ViewModelProvider(it)[AppModel::class.java].refreshLibrary()}
         context.getSharedPreferences("reader",0).edit().putString("comicTurnMode",ComicTurnMode.SCROLL.name).putString("comic:${Demo.entries[1].key}:0:0","0:0").apply()
         compose.onNodeWithText("漫画").performClick()
         compose.waitUntil(10000) {compose.onAllNodesWithText("月亮便利店").fetchSemanticsNodes().isNotEmpty()}
         compose.onAllNodesWithText("月亮便利店").onLast().performClick()
         compose.waitUntil(10000) {compose.onAllNodesWithText("第 1 话 · 今晚也有光").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("第 1 话 · 今晚也有光").performScrollTo().performClick()
-        compose.waitUntil(10000) {compose.onAllNodesWithContentDescription("第 1 页").fetchSemanticsNodes().isNotEmpty()}
+        try{compose.waitUntil(10000) {compose.onAllNodesWithContentDescription("第 1 页").fetchSemanticsNodes().isNotEmpty()}}
+        finally{capture("comic-load-check.png")}
         Thread.sleep(700)
         compose.onNodeWithContentDescription("第 1 页").assertIsDisplayed()
         capture("comic.png")

@@ -188,7 +188,7 @@ private fun kindIcon(kind:Kind)=when(kind){Kind.VIDEO->Icons.Outlined.PlayCircle
         detail=null;failure=null
         try {
             if(source==null) error("原内容源已移除，请重新导入后再打开")
-            val loaded=model.repo.detail(source,e)
+            val loaded=model.repo.detail(source,e,force=retry>0)
             lineIndex=(model.history.find{it.entry.key==e.key}?.line ?: JSONObject(source.rules).optInt("preferredLine",0)).coerceIn(loaded.lines.indices)
             detail=loaded
             model.recordDetail(loaded,lineIndex)

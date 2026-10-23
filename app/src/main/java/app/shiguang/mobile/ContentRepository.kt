@@ -5,6 +5,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.lastOrNull
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
@@ -19,13 +28,26 @@ import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class ContentRepository(private val appContext:android.content.Context?=null) {
-    val client = OkHttpClient.Builder().connectTimeout(12,TimeUnit.SECONDS).readTimeout(18,TimeUnit.SECONDS).callTimeout(25,TimeUnit.SECONDS).build()
+    val client:OkHttpClient get()=ContentNetwork.foreground
     suspend fun fetch(url: String, headers: Map<String,String> = emptyMap(), maxBytes: Int = 4*1024*1024, method:String="GET", body:String?=null, contentType:String="application/json"): String = withContext(Dispatchers.IO) {
         SourceCodec.httpUrl(url)
         val request=Request.Builder().url(url).header("User-Agent","Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36")
         headers.forEach { (key,value) -> request.header(key,value) }
         if(method=="POST")request.post((body ?: "").toRequestBody(contentType.toMediaType()))
-        client.newCall(request.build()).execute().use { response ->
+        val lane=if(currentCoroutineContext()[SearchTraffic.Key]!=null)ContentNetwork.search else client
+        val call=lane.newCall(request.build())
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation{call.cancel()}
+            call.enqueue(object:Callback {
+                override fun onFailure(call:Call,e:IOException){if(continuation.isActive)continuation.resumeWithException(e)}
+                override fun onResponse(call:Call,response:Response){
+                    try{val text=decode(response,maxBytes);if(continuation.isActive)continuation.resume(text)}
+                    catch(e:Exception){if(continuation.isActive)continuation.resumeWithException(e)}
+                }
+            })
+        }
+    }
+    private fun decode(response:Response,maxBytes:Int):String = response.use { response ->
             if(!response.isSuccessful) error("HTTP ${response.code}")
             val body=response.body ?: error("服务器返回了空内容")
             require(body.contentLength() <= maxBytes || body.contentLength() == -1L) { "内容超过大小限制" }
@@ -34,7 +56,6 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
             val declared=body.contentType()?.charset()
             val meta=if(declared==null)Regex("(?i)charset\\s*=\\s*['\"]?([A-Za-z0-9_-]+)").find(String(bytes,0,minOf(bytes.size,4096),Charsets.ISO_8859_1))?.groupValues?.get(1)?.let{runCatching{charset(it)}.getOrNull()}else null
             String(bytes,declared ?: meta ?: Charsets.UTF_8)
-        }
     }
     fun headers(s: Source): Map<String,String> {
         val r=JSONObject(s.rules);val h=r.optJSONObject("headers") ?: JSONObject()
@@ -67,18 +88,16 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
         params.forEach { b.setQueryParameter(it.first,it.second) }
         return b.build().toString()
     }
-    suspend fun search(sources: List<Source>,kind: Kind,query: String): SearchReport = coroutineScope {
-        val selected=sources.filter { it.enabled && it.kind==kind }
-        val semaphore=Semaphore(3)
-        val results=selected.map { s -> async {
-            semaphore.withPermit { try{searchOne(s,query) to null}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){emptyList<Entry>() to "${s.name}：${friendlyError(e)}"} }
-        } }.awaitAll()
-        SearchReport(results.flatMap { it.first }.distinctBy { it.key },results.mapNotNull { it.second },selected.size)
+    fun searchUpdates(sources:List<Source>,kind:Kind,query:String,onOutcome:suspend(SearchOutcome)->Unit={})=
+        SearchEngine().updates(sources.filter{it.enabled&&it.kind==kind},query,onOutcome){s,q->searchOne(s,q)}
+    suspend fun search(sources: List<Source>,kind: Kind,query: String): SearchReport {
+        val update=searchUpdates(sources,kind,query).lastOrNull()?:SearchUpdate(emptyList())
+        return SearchReport(update.entries,update.errors,update.outcomes.size)
     }
-    suspend fun searchOne(s: Source,q: String): List<Entry> = (when(s.engine) {
+    suspend fun searchOne(s: Source,q: String): List<Entry> = withContext(Dispatchers.Default){(when(s.engine) {
         "demo" -> Demo.entries.filter { it.sourceId==s.id && (q.isBlank() || it.title.contains(q,true) || it.subtitle.contains(q,true)) }
         "maccms" -> MacParser.entries(s,fetch(api(s,"ac" to "detail",*(if(q.isBlank()) emptyArray() else arrayOf("wd" to q))),headers(s)))
-        "ficket" -> FicketRepository(this,appContext).search(s,q)
+        "ficket" -> FicketRepository(this@ContentRepository,appContext).search(s,q)
         "kazumi" -> {val raw=kazumiFetch(s,true,q);withContext(Dispatchers.Default){if(JSONObject(s.rules).optString("searchMode")=="api")KazumiApi.search(s,raw) else KazumiRules.search(s,raw,KazumiRules.searchUrl(s,q))}}
         else -> {
             val r=JSONObject(s.rules)
@@ -98,8 +117,13 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
             }
         }
     }
-    ).map{it.copy(category=s.category)}
-    suspend fun detail(s: Source,e: Entry): Detail = when(s.engine) {
+    ).map{it.copy(category=s.category)}}
+    suspend fun detail(s:Source,e:Entry,force:Boolean=false):Detail {
+        val key=SearchPlanner.fingerprint(s)+"|"+e.key+"|"+e.url
+        if(!force)DetailMemoryCache.shared.get(key)?.let{return it}
+        return withContext(Dispatchers.Default){detailUncached(s,e)}.also{DetailMemoryCache.shared.put(key,it)}
+    }
+    private suspend fun detailUncached(s: Source,e: Entry): Detail = when(s.engine) {
         "local" -> withContext(Dispatchers.IO){LocalNovels(appContext?:error("无法打开本地书籍")).detail(e)}
         "demo" -> Demo.detail(e)
         "direct" -> Detail(e,listOf(Line("视频链接",listOf(Chapter("播放",e.url)))))
@@ -122,7 +146,8 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
     }
     suspend fun readingPage(s:Source,e:Entry,chapter:Chapter,force:Boolean=false):PageContent = ReadingPageCache.shared.load(
         SourceCodec.stableId(s.json().toString()+"|"+e.key+"|"+chapter.url),force){page(s,e,chapter)}
-    suspend fun page(s: Source,e: Entry,chapter: Chapter): PageContent {
+    suspend fun page(s:Source,e:Entry,chapter:Chapter):PageContent=withContext(Dispatchers.Default){pageUncached(s,e,chapter)}
+    private suspend fun pageUncached(s: Source,e: Entry,chapter: Chapter): PageContent {
         if(s.engine=="local")return withContext(Dispatchers.IO){LocalNovels(appContext?:error("无法打开本地书籍")).page(e,chapter)}
         if(s.engine=="demo") return Demo.page(e,chapter)
         if(s.engine=="ficket")return FicketRepository(this,appContext).page(s,e,chapter)

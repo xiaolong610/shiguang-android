@@ -14,6 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.collect
 
 data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val offset:Long)
 
@@ -38,18 +42,25 @@ data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val
     var query by remember(entry.key){mutableStateOf(entry.title)}
     var candidates by remember(entry.key){mutableStateOf(model.entries.filter{it.sourceId!=entry.sourceId&&WorkIdentity.same(entry,it)&&model.source(it.sourceId)?.enabled==true})}
     var busy by remember{mutableStateOf(false)};var searchJob by remember{mutableStateOf<kotlinx.coroutines.Job?>(null)}
+    var checked by remember{mutableStateOf(emptySet<String>())};var failed by remember{mutableStateOf(emptySet<String>())};var searchedQuery by remember{mutableStateOf("")}
     var message by remember{mutableStateOf("")};var error by remember{mutableStateOf<String?>(null)}
     var target by remember{mutableStateOf<Detail?>(null)};var targetLine by remember{mutableIntStateOf(0)}
     var chapter by remember{mutableIntStateOf(0)};var loadingKey by remember{mutableStateOf<String?>(null)}
     val sources=model.sources.filter{it.enabled&&it.category==model.entryCategory(entry)&&it.id!=entry.sourceId&&it.engine!="demo"}
     fun search(){if(busy||query.isBlank())return;busy=true;error=null
-        searchJob=scope.launch{try{var completed=0;var failures=0
-            for(batch in sources.chunked(6)){
-                val found=model.repo.search(batch,entry.kind,query.trim());completed+=batch.size;failures+=found.errors.size
-                candidates=(candidates+found.entries).distinctBy{it.key}.sortedByDescending{WorkIdentity.same(entry,it)}
-                message="已检查 $completed / ${sources.size} 个源"+(if(failures>0)" · $failures 个未能加载"else "")
-            }
+        if(searchedQuery!=query){checked=emptySet();failed=emptySet();searchedQuery=query;candidates=emptyList()}
+        searchJob=scope.launch{try{
+            val cached=withContext(Dispatchers.IO){LibraryStore(model.getApplication()).use{db->db.sourceHealth() to db.searchCatalog(model.entryCategory(entry),sources)}}
+            candidates=(candidates+withContext(Dispatchers.Default){SearchText.matches(cached.second,query,100)}).distinctBy{it.key}
+            val ordered=withContext(Dispatchers.Default){SearchPlanner.order(sources,cached.first)}
+            val batch=SearchPlanner.batch(ordered.filter{it.id !in checked},query,more=checked.isNotEmpty())
+            withTimeoutOrNull(20_000){model.repo.searchUpdates(batch,entry.kind,query.trim(),onOutcome={outcome->try{withContext(Dispatchers.IO){LibraryStore(model.getApplication()).use{it.recordSearch(outcome)}}}catch(e:CancellationException){throw e}catch(_:Exception){}}).collect{update->
+                checked=checked+update.outcomes.map{it.source.id};failed=failed+update.outcomes.filter{it.error!=null}.map{it.source.id}
+                candidates=SearchText.rank((candidates+update.entries).distinctBy{it.key},query).sortedByDescending{WorkIdentity.same(entry,it)}
+                message="已检查 ${checked.size} / ${sources.size} 个源"+(if(failed.isNotEmpty())" · ${failed.size} 个未能加载"else "")
+            }}
             if(candidates.isEmpty())message="没有找到其他来源，可修改关键词后重试。"
+            if(checked.size<sources.size)message+=" 还可继续查找 ${sources.size-checked.size} 个源。"
         }catch(e:CancellationException){throw e}catch(e:Exception){error=ContentRepository.friendlyError(e)}finally{busy=false}}
     }
     LaunchedEffect(entry.key){if(candidates.isEmpty())search()}
@@ -57,7 +68,7 @@ data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val
         Column(Modifier.fillMaxWidth().heightIn(max=620.dp).navigationBarsPadding().padding(horizontal=20.dp)){
             Text(if(target==null)"其他来源"else"确认换源位置",fontSize=21.sp,fontWeight=FontWeight.SemiBold)
             if(target==null){
-                Row(verticalAlignment=Alignment.CenterVertically){OutlinedTextField(query,{query=it},singleLine=true,modifier=Modifier.weight(1f),label={Text("作品名称")},enabled=!busy);TextButton(onClick={candidates=emptyList();search()},enabled=!busy&&query.isNotBlank()){Text("搜索")}}
+                Row(verticalAlignment=Alignment.CenterVertically){OutlinedTextField(query,{query=it},singleLine=true,modifier=Modifier.weight(1f),label={Text("作品名称")},enabled=!busy);TextButton(onClick={search()},enabled=!busy&&query.isNotBlank()){Text(if(checked.isNotEmpty()&&searchedQuery==query&&checked.size<sources.size)"继续查找"else"搜索")}}
                 Text("仅搜索已启用的同类源。请核对季数、年份和版本。",fontSize=11.sp,modifier=Modifier.padding(vertical=8.dp))
                 if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(message.ifBlank{if(sources.isEmpty())"请先启用其他同类内容源。"else"可选择已有结果，或搜索其他来源。"},fontSize=11.sp)

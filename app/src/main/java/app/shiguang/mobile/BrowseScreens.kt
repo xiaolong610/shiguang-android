@@ -51,14 +51,16 @@ import org.json.JSONObject
 @Composable internal fun CompactDiscoverScreen(model:AppModel,onOpen:(Entry)->Unit,onAddRules:()->Unit,onDirect:()->Unit){
     val context=LocalContext.current;val focus=LocalFocusManager.current;val scope=rememberCoroutineScope()
     var adding by remember{mutableStateOf(false)};var importing by remember{mutableStateOf(false)};var issue by remember{mutableStateOf<String?>(null)}
-    val groups=remember(model.entries){WorkIdentity.groups(model.entries)}
-    val displayEntries=groups.map{group->group.maxByOrNull{e->model.history.find{it.entry.key==e.key}?.updatedAt?:0L}!!}
+    val cards=remember(model.entries,model.history){val history=model.history.associateBy{it.entry.key};WorkIdentity.groups(model.entries).map{group->group.maxByOrNull{e->history[e.key]?.updatedAt?:0L}!! to group.size}}
+    val displayEntries=remember(cards){cards.map{it.first}}
+    val sourceCounts=remember(cards){cards.associate{it.first.key to it.second}}
+    var fullSearchMenu by remember{mutableStateOf(false)};var showErrors by remember{mutableStateOf(false)}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){importing=true;scope.launch{try{onOpen(model.importNovel(uri))}catch(e:CancellationException){throw e}catch(e:Exception){issue=ContentRepository.friendlyError(e)}finally{importing=false}}}}
-    LaunchedEffect(model.sources){model.search()}
+    LaunchedEffect(model.sources,model.category){model.ensureSearch()}
     Column(Modifier.fillMaxSize()){
         Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
             Text("拾光",fontSize=23.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=12.dp))
-            Surface(modifier=Modifier.weight(1f).height(44.dp),shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surfaceVariant){Row(Modifier.padding(start=12.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.Search,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));BasicTextField(value=model.query,onValueChange={model.query=it},singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(fontSize=13.sp,color=MaterialTheme.colorScheme.onSurface),modifier=Modifier.weight(1f),decorationBox={field->Box(contentAlignment=Alignment.CenterStart){if(model.query.isEmpty())Text("搜索${model.category.label}",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant);field()}},keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus();model.search()}));IconButton(onClick={focus.clearFocus();model.search()}){Icon(Icons.Outlined.ArrowForward,"搜索",Modifier.size(20.dp))}}}
+            Surface(modifier=Modifier.weight(1f).height(44.dp),shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surfaceVariant){Row(Modifier.padding(start=12.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.Search,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));BasicTextField(value=model.query,onValueChange={model.editQuery(it)},singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(fontSize=13.sp,color=MaterialTheme.colorScheme.onSurface),modifier=Modifier.weight(1f),decorationBox={field->Box(contentAlignment=Alignment.CenterStart){if(model.query.isEmpty())Text("搜索${model.category.label} · 支持少字",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant);field()}},keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus();model.search()}));IconButton(onClick={focus.clearFocus();model.search()}){Icon(Icons.Outlined.ArrowForward,"搜索",Modifier.size(20.dp))}}}
             Box{IconButton(onClick={adding=true},enabled=!importing){Icon(Icons.Outlined.Add,"添加")};DropdownMenu(expanded=adding,onDismissRequest={adding=false}){
                 DropdownMenuItem(text={Column{Text("导入本地小说");Text("常见格式 · 最大100MiB",fontSize=11.sp)}},leadingIcon={Icon(Icons.Outlined.FolderOpen,null)},onClick={adding=false;picker.launch(arrayOf("*/*"))})
                 DropdownMenuItem(text={Text("添加内容源")},leadingIcon={Icon(Icons.Outlined.Layers,null)},onClick={adding=false;onAddRules()})
@@ -66,19 +68,26 @@ import org.json.JSONObject
             }}
         }
         CompactCategoryTabs(model.category,{model.changeCategory(it)},pills=false)
+        if(model.query.isNotBlank()&&model.suggestions.isNotEmpty())Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){Text("可能想找",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant);model.suggestions.forEach{title->TextButton(onClick={focus.clearFocus();model.search(title)},contentPadding=PaddingValues(horizontal=8.dp)){Text(title,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=150.dp))}}}
         if(importing){LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp));Text("正在整理小说…",fontSize=12.sp,modifier=Modifier.padding(horizontal=16.dp))}
         model.history.firstOrNull{model.entryCategory(it.entry)==model.category}?.takeIf{!model.searched}?.let{progress->
             Surface(onClick={onOpen(progress.entry)},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.surfaceVariant){Row(Modifier.heightIn(min=40.dp).padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.PlayCircle,null,Modifier.size(18.dp));Text("继续：${progress.entry.title}",fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f).padding(horizontal=8.dp));Icon(Icons.Outlined.ChevronRight,null,Modifier.size(18.dp))}}
         }
         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically){Text(if(model.searched)"搜索结果"else"最近更新",fontSize=18.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f));Text("${displayEntries.size} 部",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-        if(model.errors.isNotEmpty()){var expanded by remember{mutableStateOf(false)};Surface(onClick={expanded=!expanded},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),color=MaterialTheme.colorScheme.surfaceVariant,shape=RoundedCornerShape(8.dp)){Column(Modifier.padding(10.dp)){Text("${model.errors.size} 个源未能加载 · ${if(expanded)"收起"else"查看"}",fontSize=11.sp);if(expanded)model.errors.forEach{Text(it,fontSize=11.sp)}}}}
+        Row(Modifier.fillMaxWidth().heightIn(min=36.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){Text(model.searchMessage,Modifier.weight(1f),fontSize=10.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(model.loading)TextButton(onClick={model.stopSearch()}){Text("停止",fontSize=11.sp)}
+            else if(model.searchRemaining>0){TextButton(onClick={model.moreSearch()}){Text("继续查找 ${model.searchRemaining}",fontSize=11.sp)};Box{IconButton(onClick={fullSearchMenu=true}){Icon(Icons.Outlined.MoreVert,"搜索范围",Modifier.size(18.dp))};DropdownMenu(fullSearchMenu,{fullSearchMenu=false}){DropdownMenuItem(text={Text("搜索全部剩余来源")},onClick={fullSearchMenu=false;model.moreSearch(all=true)})}}}
+        }
+        if(model.loading&&model.entries.isNotEmpty())LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+        if(model.errors.isNotEmpty())Surface(onClick={showErrors=true},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),color=MaterialTheme.colorScheme.surfaceVariant,shape=RoundedCornerShape(8.dp)){Text("${model.errors.size} 个源未能加载 · 查看",fontSize=11.sp,modifier=Modifier.padding(8.dp))}
         when{
-            model.loading->Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){CircularProgressIndicator()}
+            model.loading&&model.entries.isEmpty()->Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){CircularProgressIndicator()}
             model.entries.isEmpty()->Column(Modifier.padding(24.dp)){Text("暂时没有内容",fontSize=17.sp);Text("添加或启用${model.category.label}规则，或换个关键词。",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-            else->{val holder=rememberSaveableStateHolder();holder.SaveableStateProvider(model.category.name){CompactEntryGrid(displayEntries,onOpen=onOpen,sourceCounts=displayEntries.associate{e->e.key to (groups.find{g->g.any{it.key==e.key}}?.size?:1)})}}
+            else->{val holder=rememberSaveableStateHolder();holder.SaveableStateProvider(model.category.name){CompactEntryGrid(displayEntries,onOpen=onOpen,sourceCounts=sourceCounts)}}
         }
     }
     issue?.let{AlertDialog(onDismissRequest={issue=null},title={Text("未能导入小说")},text={Text(it)},confirmButton={TextButton(onClick={issue=null}){Text("知道了")}})}
+    if(showErrors)AlertDialog(onDismissRequest={showErrors=false},title={Text("未能加载的来源")},text={LazyColumn(Modifier.heightIn(max=360.dp)){items(model.errors){Text(it,fontSize=12.sp,modifier=Modifier.padding(vertical=8.dp))}}},confirmButton={TextButton(onClick={showErrors=false}){Text("关闭")}})
 }
 
 @Composable internal fun CompactEntryGrid(entries:List<Entry>,progress:Map<String,Progress> = emptyMap(),onOpen:(Entry)->Unit,updates:Map<String,FollowState> = emptyMap(),sourceCounts:Map<String,Int> = emptyMap()){

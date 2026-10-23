@@ -4,9 +4,10 @@ import java.text.Normalizer
 
 /** Keep seasons, years and edition names: title similarity alone must not mix sequels. */
 object WorkIdentity {
+    private val quality=Regex("(?i)[\\[【(（](?:1080p|720p|2160p|4k|高清|超清|蓝光)[\\]】)）]")
+    private val punctuation=Regex("[\\s\\p{Punct}，。！？：；、·《》【】（）]+")
     fun title(value:String):String = Normalizer.normalize(value,Normalizer.Form.NFKC).lowercase(java.util.Locale.ROOT)
-        .replace(Regex("(?i)[\\[【(（](?:1080p|720p|2160p|4k|高清|超清|蓝光)[\\]】)）]"),"")
-        .replace(Regex("[\\s\\p{Punct}，。！？：；、·《》【】（）]+"),"")
+        .replace(quality,"").replace(punctuation,"")
     fun key(e:Entry):String = "${e.category}:${title(e.title)}" +
         if(e.sourceId.startsWith("demo-")||e.sourceId==LocalNovels.source.id)":${e.key}" else ""
     fun same(a:Entry,b:Entry)=key(a)==key(b)&&title(a.title).isNotBlank()
