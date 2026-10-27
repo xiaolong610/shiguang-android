@@ -43,19 +43,19 @@ class RuleWebPage(private val context:Context) {
                 suspend fun js(script:String):String=suspendCancellableCoroutine{c->web.evaluateJavascript(script){if(c.isActive)c.resume(it ?: "null")}}
                 suspend fun waitFor(selector:String) {
                     repeat(60){if(js("!!document.querySelector(${JSONObject.quote(selector)})")=="true")return;delay(150)}
-                    error("网页未出现规则指定的元素；站点可能已改版或需要验证")
+                    error(tr(R.string.ui_0711))
                 }
                 suspend fun navigate(target:String) {
                     SourceCodec.httpUrl(target);pageLoaded=false;web.loadUrl(target,headers)
                     delay(500)
                     repeat(100){if(pageLoaded&&js("document.readyState")=="\"complete\"")return;delay(150)}
-                    error("网页加载超时，请检查源地址或稍后重试")
+                    error(tr(R.string.ui_0712))
                 }
                 try {
                     (host?.window?.decorView as? ViewGroup)?.addView(web,0,ViewGroup.LayoutParams(360,640))
                     web.onResume()
                     if(actions.isBlank())navigate(url) else {
-                        val a=JSONArray(actions);require(a.length()<=30){"网页动作超过限制"}
+                        val a=JSONArray(actions);require(a.length()<=30){tr(R.string.ui_0713)}
                         if(a.length()==0||!a.getJSONObject(0).has("goto"))navigate(url)
                         for(i in 0 until a.length()) {
                             val action=a.getJSONObject(i)
@@ -64,7 +64,7 @@ class RuleWebPage(private val context:Context) {
                                 action.has("wait")->if(action.opt("wait") is Number)delay(action.getLong("wait").coerceIn(0,7000)) else waitFor(action.getString("wait"))
                                 action.has("typeSearchKey")->{val selector=action.getString("typeSearchKey");waitFor(selector);js("(function(){var e=document.querySelector(${JSONObject.quote(selector)});e.value=${JSONObject.quote(query)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()")}
                                 action.has("click")||action.has("clickIfExist")->{val optional=action.has("clickIfExist");val selector=action.getString(if(optional)"clickIfExist" else "click");if(!optional)waitFor(selector);js("document.querySelector(${JSONObject.quote(selector)})?.click()");delay(600)}
-                                else->error("网页动作暂不支持：${action.keys().asSequence().firstOrNull()}")
+                                else->error(tr(R.string.ui_0714, action.keys().asSequence().firstOrNull()))
                             }
                         }
                     }
@@ -81,13 +81,13 @@ class RuleWebPage(private val context:Context) {
                                 if(array!=null)images=(0 until array.length()).map{array.optString(it)}.filter{ContentRepository.isHttp(it)}.distinct()
                                 if(images.isNotEmpty())break
                             }
-                            if(js("window.__sgRuleError===true")=="true")error("网页图片提取失败：源脚本与页面不匹配")
+                            if(js("window.__sgRuleError===true")=="true")error(tr(R.string.ui_0715))
                             js("window.scrollBy(0,640)");delay(150)
                         }
                     }
                     val raw=js("document.documentElement.outerHTML")
                     val html=org.json.JSONTokener(raw).nextValue().toString()
-                    require(html.length<=8*1024*1024){"动态页面超过大小限制"}
+                    require(html.length<=8*1024*1024){tr(R.string.ui_0716)}
                     RulePage(web.url ?: url,html,images)
                 } finally {
                     web.stopLoading();(web.parent as? ViewGroup)?.removeView(web);web.loadUrl("about:blank");web.destroy()

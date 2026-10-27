@@ -37,17 +37,17 @@ class AiNarrationQueue(
                 current.value=player.currentMediaItemIndex
                 pieces.getOrNull(player.currentMediaItemIndex)?.let{position(it.start)}
             }
-            override fun onIsPlayingChanged(isPlaying:Boolean){if(wants&&isPlaying)state(true,false,"AI 情感朗读")}
+            override fun onIsPlayingChanged(isPlaying:Boolean){if(wants&&isPlaying)state(true,false,tr(R.string.ui_0003))}
             override fun onPlaybackStateChanged(playbackState:Int){
                 if(!wants||pieces.isEmpty())return
                 when(playbackState){
-                    Player.STATE_BUFFERING->state(false,true,"正在准备 AI 音频…")
+                    Player.STATE_BUFFERING->state(false,true,tr(R.string.ui_0004))
                     Player.STATE_ENDED->{
                         val index=player.currentMediaItemIndex
                         if(index==pieces.lastIndex&&player.mediaItemCount==pieces.size){
                             if(!completed){completed=true;wants=false;position(pieces.last().end);finished()}
                         } else if(pendingError!=null){wants=false;failed(pendingError!!)}
-                        else state(false,true,"正在合成下一段…")
+                        else state(false,true,tr(R.string.ui_0005))
                     }
                 }
             }
@@ -55,7 +55,7 @@ class AiNarrationQueue(
                 if(!wants)return
                 wants=false;worker?.cancel()
                 player.currentMediaItem?.localConfiguration?.uri?.path?.let{path->java.io.File(path).delete()}
-                failed("AI 音频无法播放，请重试或切换到手机语音")
+                failed(tr(R.string.ui_0006))
             }
         })
     }
@@ -71,7 +71,7 @@ class AiNarrationQueue(
         wants=true;completed=false;pendingError=null
         if(player.playerError!=null){val offset=pieces.getOrNull(player.currentMediaItemIndex)?.start?:pieces.first().start;val remaining=pieces.filter{it.end>offset};reset();pieces=remaining;wants=true}
         if(player.mediaItemCount>0){player.playWhenReady=true;if(player.playbackState==Player.STATE_IDLE)player.prepare()}
-        state(player.isPlaying,!player.isPlaying,if(player.isPlaying)"AI 情感朗读"else"正在准备 AI 音频…")
+        state(player.isPlaying,!player.isPlaying,if(player.isPlaying)tr(R.string.ui_0003)else tr(R.string.ui_0004))
         fill()
     }
     fun pause(){wants=false;epoch++;worker?.cancel();worker=null;player.pause()}
@@ -83,8 +83,8 @@ class AiNarrationQueue(
         worker=scope.launch{
             try{
                 val health=client.health()
-                require(health.optJSONArray("styles")?.let{a->(0 until a.length()).any{a.optString(it)==client.configuredStyle}}==true){"语音服务不支持所选朗读风格，请重新配对"}
-                require(health.optJSONArray("voices")?.let{a->(0 until a.length()).any{a.optString(it)==client.configuredVoice}}==true){"语音服务不支持已配对的音色，请重新配对"}
+                require(health.optJSONArray("styles")?.let{a->(0 until a.length()).any{a.optString(it)==client.configuredStyle}}==true){tr(R.string.ui_0009)}
+                require(health.optJSONArray("voices")?.let{a->(0 until a.length()).any{a.optString(it)==client.configuredVoice}}==true){tr(R.string.ui_0010)}
                 var next=player.mediaItemCount
                 while(isActive&&wants&&run==epoch&&next<pieces.size){
                     current.first{next<=it+1};ensureActive()
@@ -99,7 +99,7 @@ class AiNarrationQueue(
                     if(next==0||ended){if(ended)player.seekTo(next,0);player.prepare();player.playWhenReady=true}
                     next++
                 }
-            }catch(e:TimeoutCancellationException){reportFailure(run,"AI 合成超时，请重试或使用手机语音")}
+            }catch(e:TimeoutCancellationException){reportFailure(run,tr(R.string.ui_0011))}
             catch(e:CancellationException){throw e}
             catch(e:Exception){reportFailure(run,ContentRepository.friendlyError(e))}
         }

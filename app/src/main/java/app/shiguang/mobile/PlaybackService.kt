@@ -59,6 +59,7 @@ object VideoCache {
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackService:MediaSessionService() {
+    override fun attachBaseContext(base:android.content.Context){super.attachBaseContext(AppLanguage.wrap(base))}
     private lateinit var exo:ExoPlayer
     private lateinit var session:MediaSession
     private lateinit var store:LibraryStore
@@ -98,11 +99,11 @@ class PlaybackService:MediaSessionService() {
                     when(command.customAction) {
                         PlaybackSession.BOOST_START->{if(temporaryBase==null&&exo.isPlaying){temporaryBase=exo.playbackParameters.speed;exo.setPlaybackSpeed(maxOf(2f,temporaryBase!!));update{it.copy(boosting=true)}}}
                         PlaybackSession.BOOST_END->endBoost()
-                        PlaybackSession.LOAD->{val next=PlaybackRequest.parse(JSONObject(args.getString("request") ?: error("请求为空")));if(next.id!=request?.id)load(next)}
+                        PlaybackSession.LOAD->{val next=PlaybackRequest.parse(JSONObject(args.getString("request") ?: error(tr(R.string.ui_0647))));if(next.id!=request?.id)load(next)}
                         PlaybackSession.FILTER->{filter.set(!filter.get());prefs.edit().putBoolean("filterAds",filter.get()).apply();request?.let{load(it.copy(id=UUID.randomUUID().toString(),chapter=trackedChapter,offset=originalPosition()))}}
                         PlaybackSession.NEXT->next(1)
                         PlaybackSession.PREVIOUS->next(-1)
-                        PlaybackSession.GOTO->{val index=args.getInt("index",-1);require(index in (request?.pages?.indices?:IntRange.EMPTY)){"集数已变更"};next(index-trackedChapter)}
+                        PlaybackSession.GOTO->{val index=args.getInt("index",-1);require(index in (request?.pages?.indices?:IntRange.EMPTY)){tr(R.string.ui_0648)};next(index-trackedChapter)}
                         PlaybackSession.RETRY->request?.let{load(it.copy(id=UUID.randomUUID().toString(),chapter=trackedChapter,offset=if(pendingSeek!=null)it.offset else originalPosition()))}
                         PlaybackSession.STOP->{endBoost();save();resolver?.cancel();request=null;exo.stop();exo.clearMediaItems();PlaybackSession.state.value=PlaybackInfo();Handler(Looper.getMainLooper()).postDelayed({stopSelf()},100)}
                         else->return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
@@ -113,7 +114,7 @@ class PlaybackService:MediaSessionService() {
         }).build()
         exo.addListener(object:Player.Listener {
             override fun onRenderedFirstFrame(){update{it.copy(rendered=true)}}
-            override fun onPlayerError(error:PlaybackException){update{it.copy(error=if(request?.offlineId?.isNotBlank()==true)"离线文件不完整或无法解码，请删除此下载后重新下载。"else"播放失败：${error.errorCodeName}。可重新解析或换线路。",status="",playing=false)}}
+            override fun onPlayerError(error:PlaybackException){update{it.copy(error=if(request?.offlineId?.isNotBlank()==true)tr(R.string.ui_0649)else tr(R.string.ui_0650, error.errorCodeName),status="",playing=false)}}
             override fun onIsPlayingChanged(isPlaying:Boolean){if(!isPlaying)endBoost();update{it.copy(playing=isPlaying)}}
             override fun onPlaybackParametersChanged(playbackParameters:PlaybackParameters){if(temporaryBase==null)prefs.edit().putFloat("speed",playbackParameters.speed).apply();update{it.copy(speed=playbackParameters.speed)}}
             override fun onMediaItemTransition(item:MediaItem?,reason:Int) {
@@ -159,7 +160,7 @@ class PlaybackService:MediaSessionService() {
     private fun load(r:PlaybackRequest) {
         endBoost();save();resolver?.cancel();exo.pause();exo.stop();exo.clearMediaItems();pendingSeek=null
         request=r;trackedChapter=r.chapter;lastPosition=r.offset;lastDuration=0;reports.clear()
-        PlaybackSession.state.value=PlaybackInfo(r.entry,r.pages[r.chapter].title,status="正在准备播放…",filter=filter.get(),chapter=r.chapter,total=r.pages.size,requestId=r.id,page=r.pages[r.chapter].url,pages=r.pages,speed=exo.playbackParameters.speed,line=r.line,positionMs=r.offset,offlineId=r.offlineId)
+        PlaybackSession.state.value=PlaybackInfo(r.entry,r.pages[r.chapter].title,status=tr(R.string.ui_0651),filter=filter.get(),chapter=r.chapter,total=r.pages.size,requestId=r.id,page=r.pages[r.chapter].url,pages=r.pages,speed=exo.playbackParameters.speed,line=r.line,positionMs=r.offset,offlineId=r.offlineId)
         resolver=scope.launch {
             try {
                 withContext(Dispatchers.IO){if(r.offlineId.isBlank())VideoCache.get(this@PlaybackService)else VideoDownloads.cache(this@PlaybackService)}

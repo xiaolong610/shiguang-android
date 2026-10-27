@@ -47,7 +47,7 @@ class WebVideoResolver(private val context:Context,private val repo:ContentRepos
         val configured=s?.let{repo.headers(it)} ?: emptyMap()
         if(direct(page))return ResolvedVideo(page,withCookies(page,configured),if(Uri.parse(page).path?.endsWith("m3u8",true)==true)"application/x-mpegURL" else "")
         return slots.withPermit {withContext(Dispatchers.Main){withTimeout(40000){coroutineScope {
-            onStatus("正在解析网页中的播放地址…")
+            onStatus(tr(R.string.ui_0825))
             val result=CompletableDeferred<ResolvedVideo>();val validationJob=SupervisorJob(coroutineContext[Job]);val scope=CoroutineScope(coroutineContext+validationJob)
             val seen=mutableSetOf<String>();var lastError="";var web:WebView?=null
             fun offer(raw:String,referer:String,mime:String,requestHeaders:Map<String,String> = emptyMap()) {
@@ -88,7 +88,7 @@ class WebVideoResolver(private val context:Context,private val repo:ContentRepos
                     override fun onPageStarted(view:WebView,url:String?,favicon:android.graphics.Bitmap?){if(!startScript)view.evaluateJavascript(script,null)}
                     override fun onPageFinished(view:WebView,url:String?){view.evaluateJavascript(script,null)}
                     override fun onReceivedError(view:WebView,request:WebResourceRequest,error:WebResourceError){if(BuildConfig.DEBUG)android.util.Log.d("ShiguangResolver","network ${request.url.host}, main=${request.isForMainFrame}: ${error.errorCode}")}
-                    override fun onReceivedSslError(view:WebView,handler:SslErrorHandler,error:android.net.http.SslError){handler.cancel();lastError="网站证书验证失败"}
+                    override fun onReceivedSslError(view:WebView,handler:SslErrorHandler,error:android.net.http.SslError){handler.cancel();lastError=tr(R.string.ui_0252)}
                 }
                 webChromeClient=object:WebChromeClient(){override fun onPermissionRequest(request:PermissionRequest){request.deny()}}
                 setDownloadListener{_,_,_,_,_->}
@@ -104,7 +104,7 @@ class WebVideoResolver(private val context:Context,private val repo:ContentRepos
                 else {web!!.measure(View.MeasureSpec.makeMeasureSpec(320,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(180,View.MeasureSpec.EXACTLY));web!!.layout(0,0,320,180)}
                 web!!.onResume();web!!.loadUrl(page,configured);result.await()
             }
-            catch(e:TimeoutCancellationException){error("未能提取可播放地址。站点可能需要验证或使用了不兼容的播放器。${lastError.take(70)}")}
+            catch(e:TimeoutCancellationException){error(tr(R.string.ui_0827, lastError.take(70)))}
             finally {validationJob.cancel();web?.let{it.stopLoading();it.removeJavascriptInterface("ShiguangMedia");(it.parent as? ViewGroup)?.removeView(it);it.loadUrl("about:blank");it.destroy()};result.cancel()}
         }}}}
     }
@@ -117,8 +117,8 @@ class WebVideoResolver(private val context:Context,private val repo:ContentRepos
         val request=Request.Builder().url(url).header("Range","bytes=0-65535")
         headers.forEach{(k,v)->request.header(k,v)}
         repo.client.newCall(request.build()).execute().use{response->
-            require(response.isSuccessful){"候选视频 HTTP ${response.code}"}
-            val body=response.body ?: error("候选视频为空")
+            require(response.isSuccessful){tr(R.string.ui_0828, response.code)}
+            val body=response.body ?: error(tr(R.string.ui_0829))
             val bytes=body.byteStream().use{input->val buffer=ByteArray(65536);var length=0;while(length<buffer.size){val n=input.read(buffer,length,buffer.size-length);if(n<0)break;length+=n};buffer.copyOf(length)}
             val text=String(bytes,Charsets.UTF_8).trimStart('\uFEFF',' ','\r','\n','\t')
             val ct=response.header("Content-Type").orEmpty()
@@ -127,7 +127,7 @@ class WebVideoResolver(private val context:Context,private val repo:ContentRepos
                 text.contains("<MPD")&&text.take(100).contains('<')->"application/dash+xml"
                 bytes.size>=12&&String(bytes,4,4,Charsets.US_ASCII)=="ftyp"->"video/mp4"
                 ct.startsWith("video/")&&!text.startsWith('<')->ct.substringBefore(';')
-                else->error("候选不是可确认的视频清单或媒体")
+                else->error(tr(R.string.ui_0830))
             }
             // Preserve the URL observed by the page so its cookies/redirect policy stay scoped.
             ResolvedVideo(url,headers,mime)

@@ -20,6 +20,12 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 
 class AppModel(app: Application): AndroidViewModel(app) {
+    private var interfaceLanguage=AppLanguage.tag
+    fun refreshLanguage(){
+        if(interfaceLanguage==AppLanguage.tag)return
+        interfaceLanguage=AppLanguage.tag;stopSearch();sourceSignature="";catalogCategory=null
+        refreshSources();search()
+    }
     val store=LibraryStore(app)
     val repo=ContentRepository(app)
     private val prefs=app.getSharedPreferences("source-options",0)
@@ -99,13 +105,13 @@ class AppModel(app: Application): AndroidViewModel(app) {
     private fun write(sources:Boolean=false,library:Boolean=true,action:()->Unit):kotlinx.coroutines.Deferred<Unit>{
         val result=kotlinx.coroutines.CompletableDeferred<Unit>();libraryRefreshing=true;writeCount.incrementAndGet()
         val queued=writes.trySend{try{action();result.complete(Unit)}catch(e:Exception){result.completeExceptionally(e);throw e}finally{LibraryEvents.changed(sources,library)}}
-        if(queued.isFailure){writeCount.decrementAndGet();result.completeExceptionally(IllegalStateException("页面已关闭，请重新打开后操作"))};return result
+        if(queued.isFailure){writeCount.decrementAndGet();result.completeExceptionally(IllegalStateException(tr(R.string.ui_0029)))};return result
     }
     private suspend fun awaitLibrary(){while(!libraryIdle){if(libraryError.isNotBlank())error(libraryError);delay(10)}}
     private var indexedList:List<Source>?=null
     private var indexed=emptyMap<String,Source>()
     @Synchronized private fun sourceIndex():Map<String,Source>{val current=sources;if(indexedList!==current){indexed=current.associateBy{it.id};indexedList=current};return indexed}
-    fun source(id: String)=sourceIndex()[id] ?: if(id=="direct-video") Source(id,"视频链接",Kind.VIDEO,"direct") else if(id==LocalNovels.source.id) LocalNovels.source else null
+    fun source(id: String)=sourceIndex()[id] ?: if(id=="direct-video") Source(id,tr(R.string.ui_0030),Kind.VIDEO,"direct") else if(id==LocalNovels.source.id) LocalNovels.source else null
     suspend fun importNovel(uri:android.net.Uri):Entry {val e=LocalNovels(getApplication()).import(uri);withContext(Dispatchers.IO){store.favorite(e,true)};refreshLibrary();changeKind(Kind.NOVEL);return e}
     fun refreshLibrary() {libraryRefreshing=true;LibraryEvents.changed(library=true)}
     fun checkUpdates(){if(checkingUpdates)return;checkingUpdates=true;viewModelScope.launch{try{updateMessage=FollowManager(getApplication()).refresh(force=true);refreshLibrary()}catch(e:CancellationException){throw e}catch(e:Exception){updateMessage=ContentRepository.friendlyError(e)}finally{checkingUpdates=false}}}
@@ -142,12 +148,12 @@ class AppModel(app: Application): AndroidViewModel(app) {
             if(query==typed&&category==selectedCategory)suggestions=values
         }
     }
-    fun stopSearch(){job?.cancel();generation++;loading=false;searchRemaining=session?.let{it.sources.size-it.seen.size}?:searchTotal;searchMessage="已停止，保留当前结果"}
+    fun stopSearch(){job?.cancel();generation++;loading=false;searchRemaining=session?.let{it.sources.size-it.seen.size}?:searchTotal;searchMessage=tr(R.string.ui_0031)}
     fun search(q:String=query){
         job?.cancel();suggestionJob?.cancel();val current=++generation
         val text=q.trim().take(120);query=text;submittedQuery=text;searched=text.isNotBlank();loading=true
         holdResults=false;hasPendingResults=false;pendingResultCount=0
-        entries=emptyList();errors=emptyList();searchCount=0;searchRemaining=0;searchMessage="正在读取本地匹配…"
+        entries=emptyList();errors=emptyList();searchCount=0;searchRemaining=0;searchMessage=tr(R.string.ui_0032)
         val selectedCategory=category
         job=viewModelScope.launch{
             try{
@@ -166,7 +172,7 @@ class AppModel(app: Application): AndroidViewModel(app) {
                 val initialSuggestions=withContext(Dispatchers.Default){SearchText.suggestions(catalog,text)}
                 initial.forEach{next.found[it.key]=it};session=next;suggestions=initialSuggestions;entries=initial
                 runSearchBatch(next,current,all=false,more=false,allowFuzzy=true)
-            }catch(e:CancellationException){throw e}catch(e:Exception){if(current==generation){errors=listOf(ContentRepository.friendlyError(e));searchMessage="搜索暂时失败，已有结果保留"}}
+            }catch(e:CancellationException){throw e}catch(e:Exception){if(current==generation){errors=listOf(ContentRepository.friendlyError(e));searchMessage=tr(R.string.ui_0033)}}
             finally{if(current==generation)loading=false}
         }
     }
@@ -192,7 +198,7 @@ class AppModel(app: Application): AndroidViewModel(app) {
     private suspend fun runSearchBatch(currentSession:SearchSession,current:Int,all:Boolean,more:Boolean,allowFuzzy:Boolean){
         val pending=currentSession.sources.filter{it.id !in currentSession.seen}
         val selected=if(all)pending else SearchPlanner.batch(pending,currentSession.query,more)
-        searchMessage=if(all)"正在搜索全部来源，可随时停止"else"快源优先，结果边到边显示"
+        searchMessage=if(all)tr(R.string.ui_0034)else tr(R.string.ui_0035)
         suspend fun collectResults(){repo.searchUpdates(selected,currentSession.category.kind,currentSession.query,::rememberOutcome).collect{update->
             if(current!=generation)return@collect
             update.outcomes.forEach{o->currentSession.seen[o.source.id]=o;o.entries.forEach{currentSession.found[it.key]=it}}
@@ -203,7 +209,7 @@ class AppModel(app: Application): AndroidViewModel(app) {
         if(allowFuzzy&&currentSession.found.isEmpty()&&SearchText.normalize(currentSession.query).length>=3){
             val successful=currentSession.seen.values.filter{it.error==null&&!SearchPlanner.dynamic(it.source)&&it.source.engine!="demo"}.map{it.source}.take(2)
             if(successful.isNotEmpty()){
-                searchMessage="正在尝试少字和近似关键词…"
+                searchMessage=tr(R.string.ui_0036)
                 val fallback=coroutineScope{SearchText.broader(currentSession.query).take(2).mapIndexed{i,variant->async(Dispatchers.Default){
                     val source=successful[i%successful.size]
                     val start=System.nanoTime()
@@ -216,7 +222,7 @@ class AppModel(app: Application): AndroidViewModel(app) {
         }
         if(current==generation){
             searchCount=currentSession.seen.size;searchRemaining=currentSession.sources.size-searchCount
-            searchMessage=if(searchTotal==0)"暂无启用的同类网站，可先搜索本地作品"else"已检查 $searchCount / $searchTotal 个源"+(if(searchRemaining>0)"，可继续扩大范围"else"，搜索完成")
+            searchMessage=if(searchTotal==0)tr(R.string.ui_0037)else tr(R.string.ui_0038, searchCount, searchTotal)+(if(searchRemaining>0)tr(R.string.ui_0039)else tr(R.string.ui_0040))
             catalog=(currentSession.found.values+catalog).distinctBy{it.key}.take(8000)
             if(!holdResults)suggestions=withContext(Dispatchers.Default){SearchText.suggestions(catalog,currentSession.query)}
         }

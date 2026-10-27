@@ -12,15 +12,15 @@ import javax.xml.xpath.XPathFactory
 /** Independent adapter for the public Kazumi rule format. XPath 1.0 only. */
 object KazumiRules {
     fun validate(r:JSONObject) {
-        require(r.optInt("api",1)<=9){"此Kazumi规则需要更新的引擎（最高支持规则等级9的基础字段）"}
-        require(r.optString("type","anime") in setOf("anime","video")){"此版只支持Kazumi影视/动漫规则"}
+        require(r.optInt("api",1)<=9){tr(R.string.ui_0344)}
+        require(r.optString("type","anime") in setOf("anime","video")){tr(R.string.ui_0345)}
         for((mode,config,fields) in listOf(
             Triple("searchMode","searchApiConfig",listOf("searchURL","searchList","searchName","searchResult")),
             Triple("chapterMode","chapterApiConfig",listOf("chapterRoads","chapterResult")))) {
             when(r.optString(mode,"xpath")) {
-                "xpath"->fields.forEach{require(r.optString(it).isNotBlank()){"Kazumi规则缺少 $it"}}
-                "api"->{val c=r.optJSONObject(config) ?: error("缺少 $config");require(c.optJSONObject("request")?.optString("url")?.isNotBlank()==true){"$config 缺少请求地址"};KazumiApi.validate(c,mode=="chapterMode")}
-                else->error("不支持的Kazumi规则模式：${r.optString(mode)}")
+                "xpath"->fields.forEach{require(r.optString(it).isNotBlank()){tr(R.string.ui_0346, it)}}
+                "api"->{val c=r.optJSONObject(config) ?: error(tr(R.string.ui_0347, config));require(c.optJSONObject("request")?.optString("url")?.isNotBlank()==true){tr(R.string.ui_0348, config)};KazumiApi.validate(c,mode=="chapterMode")}
+                else->error(tr(R.string.ui_0349, r.optString(mode)))
             }
         }
     }
@@ -41,7 +41,7 @@ object KazumiRules {
             // Kazumi applies // selectors relative to each result fragment.
             val expr=if(context===root) expression else if(expression.startsWith("//")) ".$expression" else expression
             return try {val ns=xpath.evaluate(expr,context,XPathConstants.NODESET) as NodeList;(0 until ns.length).map{ns.item(it)}}
-                catch(e:Exception){error("XPath选择器暂不兼容：${expression.take(100)}")}
+                catch(e:Exception){error(tr(R.string.ui_0350, expression.take(100)))}
         }
         fun first(context:Node,expression:String)=nodes(context,expression).firstOrNull()
     }
@@ -58,7 +58,7 @@ object KazumiRules {
             if(name.isBlank()||raw.isNullOrBlank()||!ContentRepository.isHttp(url))null else {
                 val image=p.first(node,".//img")
                 val cover=listOf("data-src","data-original","src").map{attr(image,it)}.firstOrNull{it.isNotBlank()}.orEmpty()
-                Entry(SourceCodec.stableId(url),s.id,name,Kind.VIDEO,url,cover.takeIf{it.isNotBlank()}?.let{ContentRepository.resolve(pageUrl,it)}.orEmpty(),"动漫 · ${s.name}")
+                Entry(SourceCodec.stableId(url),s.id,name,Kind.VIDEO,url,cover.takeIf{it.isNotBlank()}?.let{ContentRepository.resolve(pageUrl,it)}.orEmpty(),tr(R.string.ui_0339, s.name))
             }
         }.distinctBy{it.key}
     }
@@ -68,11 +68,11 @@ object KazumiRules {
             val chapters=p.nodes(node,r.getString("chapterResult")).take(3000).mapIndexedNotNull{j,ch->
                 val raw=if(ch.nodeType==Node.ATTRIBUTE_NODE) ch.nodeValue else attr(ch,"href")
                 val url=normalize(s.url,raw)
-                if(raw.isBlank()||!ContentRepository.isHttp(url))null else Chapter(text(ch).ifBlank{"第${j+1}集"},url)
+                if(raw.isBlank()||!ContentRepository.isHttp(url))null else Chapter(text(ch).ifBlank{tr(R.string.ui_0340, j+1)},url)
             }.distinctBy{it.url}
-            if(chapters.isEmpty())null else Line("播放线路 ${i+1}",chapters)
+            if(chapters.isEmpty())null else Line(tr(R.string.ui_0353, i+1),chapters)
         }
-        require(lines.isNotEmpty()){"未提取到剧集，站点可能已改版或需要网页验证"}
+        require(lines.isNotEmpty()){tr(R.string.ui_0354)}
         return Detail(e,lines)
     }
     fun checkChallenge(r:JSONObject,html:String) {
@@ -84,7 +84,7 @@ object KazumiRules {
             "regex"->value.isNotBlank()&&Regex(value,RegexOption.IGNORE_CASE).containsMatchIn(html)
             else->value.isNotBlank()&&XPathPage(html).let{it.nodes(it.root,value).isNotEmpty()}
         }
-        require(!detected){"站点需要网页验证，当前请换源或在浏览器观看"}
+        require(!detected){tr(R.string.ui_0355)}
     }
     fun searchUrl(s:Source,q:String)=ContentRepository.resolve(s.url,JSONObject(s.rules).getString("searchURL").replace("@keyword",URLEncoder.encode(q,"UTF-8")))
 }

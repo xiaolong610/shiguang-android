@@ -19,7 +19,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-data class SourceSubscription(val id:String,val name:String,val url:String,val enabled:Boolean=true,val checked:Long=0,val succeeded:Long=0,val message:String="尚未刷新",val etag:String="",val modified:String="",val backup:String="[]") {
+data class SourceSubscription(val id:String,val name:String,val url:String,val enabled:Boolean=true,val checked:Long=0,val succeeded:Long=0,val message:String=tr(R.string.ui_0718),val etag:String="",val modified:String="",val backup:String="[]") {
     fun json()=JSONObject().put("id",id).put("name",name).put("url",url).put("enabled",enabled).put("checked",checked).put("succeeded",succeeded).put("message",message).put("etag",etag).put("modified",modified).put("backup",backup)
     companion object {fun parse(o:JSONObject)=SourceSubscription(o.getString("id"),o.getString("name"),o.getString("url"),o.optBoolean("enabled",true),o.optLong("checked"),o.optLong("succeeded"),o.optString("message"),o.optString("etag"),o.optString("modified"),o.optString("backup","[]"))}
 }
@@ -72,57 +72,57 @@ class SubscriptionManager(private val context:Context) {
         return subs.filter{it.enabled&&(force||System.currentTimeMillis()-it.checked>6*60*60*1000)}.map{refresh(it.id)}
     }
     suspend fun refresh(id:String):String=mutex.withLock {withContext(Dispatchers.IO){LibraryStore(context).use {store->
-        val sub=store.subscriptions().find{it.id==id} ?: return@use "订阅已移除"
+        val sub=store.subscriptions().find{it.id==id} ?: return@use tr(R.string.ui_0719)
         try {
             val builder=Request.Builder().url(sub.url).header("User-Agent","Shiguang/0.3")
             if(sub.etag.isNotBlank())builder.header("If-None-Match",sub.etag)
             if(sub.modified.isNotBlank())builder.header("If-Modified-Since",sub.modified)
             var etag="";var modified=""
             val raw=client.newCall(builder.build()).execute().use {response->
-                if(response.code==304){val now=System.currentTimeMillis();store.transaction{store.subscriptions().find{it.id==id}?.let{store.putSubscription(it.copy(checked=now,succeeded=now,message="没有更新"))}};return@use null}
+                if(response.code==304){val now=System.currentTimeMillis();store.transaction{store.subscriptions().find{it.id==id}?.let{store.putSubscription(it.copy(checked=now,succeeded=now,message=tr(R.string.ui_0720)))}};return@use null}
                 require(response.isSuccessful){"HTTP ${response.code}"};etag=response.header("ETag").orEmpty();modified=response.header("Last-Modified").orEmpty()
-                response.body?.byteStream()?.use{String(it.readBytesLimited(2*1024*1024),Charsets.UTF_8)} ?: error("订阅为空")
-            } ?: return@use "没有更新"
+                response.body?.byteStream()?.use{String(it.readBytesLimited(2*1024*1024),Charsets.UTF_8)} ?: error(tr(R.string.ui_0721))
+            } ?: return@use tr(R.string.ui_0720)
             val trimmed=raw.trim().removePrefix("\uFEFF")
-            val array=when {trimmed.startsWith('[')->JSONArray(trimmed);trimmed.startsWith('{')->JSONObject(trimmed).let{it.optJSONArray("sources") ?: JSONArray().put(it)};else->error("订阅必须返回JSON规则或源列表")}
-            require(array.length() in 1..500){"订阅应包含1—500项"}
+            val array=when {trimmed.startsWith('[')->JSONArray(trimmed);trimmed.startsWith('{')->JSONObject(trimmed).let{it.optJSONArray("sources") ?: JSONArray().put(it)};else->error(tr(R.string.ui_0723))}
+            require(array.length() in 1..500){tr(R.string.ui_0724)}
             val catalog=(0 until array.length()).all{val o=array.getJSONObject(it);o.has("name")&&!o.has("api")&&!o.has("url")&&!o.has("baseURL")&&!o.has("engine")}
             val sources=if(catalog)coroutineScope {
                 val semaphore=Semaphore(3)
                 (0 until array.length()).map{i->async{semaphore.withPermit{
-                    val name=array.getJSONObject(i).getString("name");require(name.isNotBlank()&&!name.contains('/')&&!name.contains('\\')){"规则目录名称无效"}
+                    val name=array.getJSONObject(i).getString("name");require(name.isNotBlank()&&!name.contains('/')&&!name.contains('\\')){tr(R.string.ui_0725)}
                     val link=sub.url.toHttpUrl().newBuilder().removePathSegment(sub.url.toHttpUrl().pathSegments.lastIndex).addPathSegment("$name.json").build()
-                    val text=client.newCall(Request.Builder().url(link).build()).execute().use{r->require(r.isSuccessful){"$name：HTTP ${r.code}"};r.body?.byteStream()?.use{String(it.readBytesLimited(512*1024),Charsets.UTF_8)} ?: error("规则为空")}
+                    val text=client.newCall(Request.Builder().url(link).build()).execute().use{r->require(r.isSuccessful){"$name：HTTP ${r.code}"};r.body?.byteStream()?.use{String(it.readBytesLimited(512*1024),Charsets.UTF_8)} ?: error(tr(R.string.ui_0726))}
                     SourceCodec.parse(text).single()
                 }}}.awaitAll()
             } else SourceCodec.parse(raw)
-            for(s in sources)require(store.sourceOwner(s.id).let{it==null||it==id}){"${s.name}已由其他订阅管理，请先取消原订阅"}
+            for(s in sources)require(store.sourceOwner(s.id).let{it==null||it==id}){tr(R.string.ui_0727, s.name)}
             val now=System.currentTimeMillis()
             var message=""
             store.transaction {
                 val latest=store.subscriptions().find{it.id==id} ?: return@transaction
-                if(sub.enabled&&!latest.enabled){message="自动刷新已暂停，未应用更新";return@transaction}
+                if(sub.enabled&&!latest.enabled){message=tr(R.string.ui_0728);return@transaction}
                 val current=store.sources();val links=store.subscriptionLinks(id)
                 val plan=SubscriptionMerge.plan(current,links,sources)
                 val before=JSONArray().apply{current.filter{old->links.any{it.sourceId==old.id}}.forEach{put(it.json())}}
                 val changed=plan.sources.any{fresh->current.find{it.id==fresh.id}?.let{old->!SubscriptionMerge.sameContent(old,fresh)} ?: true}
-                message="已检查 ${sources.size} 项"+(if(plan.retainedEdits>0)"，保留 ${plan.retainedEdits} 项本地修改" else "")+(if(plan.retired>0)"，停用 ${plan.retired} 项上游移除的源" else "")
+                message=tr(R.string.ui_0729, sources.size)+(if(plan.retainedEdits>0)tr(R.string.ui_0730, plan.retainedEdits) else "")+(if(plan.retired>0)tr(R.string.ui_0731, plan.retired) else "")
                 plan.sources.forEach{store.putSource(it)};plan.links.forEach{store.putSubscriptionLink(id,it)}
                 store.putSubscription(latest.copy(checked=now,succeeded=now,message=message,etag=if(catalog)"" else etag,modified=if(catalog)"" else modified,backup=if(changed&&before.length()>0)before.toString() else latest.backup))
-            };message.ifBlank{"订阅已移除"}
-        } catch(e:CancellationException){throw e} catch(e:Exception){val message="刷新失败：${ContentRepository.friendlyError(e)}";store.subscriptions().find{it.id==id}?.let{store.putSubscription(it.copy(checked=System.currentTimeMillis(),message=message))};message}
+            };message.ifBlank{tr(R.string.ui_0719)}
+        } catch(e:CancellationException){throw e} catch(e:Exception){val message=tr(R.string.ui_0733, ContentRepository.friendlyError(e));store.subscriptions().find{it.id==id}?.let{store.putSubscription(it.copy(checked=System.currentTimeMillis(),message=message))};message}
     }}}
     suspend fun restore(id:String):String=mutex.withLock{withContext(Dispatchers.IO){LibraryStore(context).use{store->
-        val sub=store.subscriptions().firstOrNull{it.id==id} ?: return@use "订阅已移除"
-        val array=JSONArray(sub.backup);require(array.length()>0){"暂无上一版可恢复"}
+        val sub=store.subscriptions().firstOrNull{it.id==id} ?: return@use tr(R.string.ui_0719)
+        val array=JSONArray(sub.backup);require(array.length()>0){tr(R.string.ui_0735)}
         val old=SourceCodec.parse(array.toString());val links=store.subscriptionLinks(id).associateBy{it.sourceId};val current=store.sources().associateBy{it.id}
-        store.transaction {old.filter{links[it.id]?.removed!=true}.forEach{s->store.putSource(s.copy(enabled=current[s.id]?.enabled ?: s.enabled));store.putSubscriptionLink(id,SubscriptionLink(s.id,s.json().toString()))};store.putSubscription(sub.copy(message="已恢复上一版；自动刷新已暂停",enabled=false,etag="",modified=""))}
-        "已恢复上一版，自动刷新已暂停"
+        store.transaction {old.filter{links[it.id]?.removed!=true}.forEach{s->store.putSource(s.copy(enabled=current[s.id]?.enabled ?: s.enabled));store.putSubscriptionLink(id,SubscriptionLink(s.id,s.json().toString()))};store.putSubscription(sub.copy(message=tr(R.string.ui_0736),enabled=false,etag="",modified=""))}
+        tr(R.string.ui_0737)
     }}}
 }
 
 class SubscriptionWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params) {
-    override suspend fun doWork():Result = try{val messages=SubscriptionManager(applicationContext).refreshAll(force=runAttemptCount>0);if(runAttemptCount<4&&messages.any{it.startsWith("刷新失败")})Result.retry() else Result.success()}catch(e:CancellationException){throw e}catch(e:Exception){Result.retry()}
+    override suspend fun doWork():Result = try{val messages=SubscriptionManager(applicationContext).refreshAll(force=runAttemptCount>0);if(runAttemptCount<4&&messages.any{AppLanguage.refreshFailed(it)})Result.retry() else Result.success()}catch(e:CancellationException){throw e}catch(e:Exception){Result.retry()}
 }
 object SubscriptionSchedule {
     fun ensure(context:Context) {

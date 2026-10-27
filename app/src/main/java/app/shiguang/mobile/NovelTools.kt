@@ -31,8 +31,8 @@ object NovelSearch {
         };return result
     }
     suspend fun local(context:Context,entry:Entry,query:String,onProgress:(Int,Int)->Unit={_,_->}):List<NovelHit> = withContext(Dispatchers.IO){
-        require(query.trim().isNotEmpty()){"请输入搜索关键词"}
-        require(entry.sourceId==LocalNovels.source.id){"全书搜索仅用于本地导入小说"}
+        require(query.trim().isNotEmpty()){tr(R.string.ui_0625)}
+        require(entry.sourceId==LocalNovels.source.id){tr(R.string.ui_0626)}
         require(entry.id.matches(Regex("[a-f0-9]{24}")))
         val directory=File(context.filesDir,"novels");val manifest=JSONObject(File(directory,"${entry.id}.json").readText());val chapters=manifest.getJSONArray("chapters")
         val results=mutableListOf<NovelHit>()
@@ -51,13 +51,13 @@ object NovelFonts {
         val temp=File(directory,".font-${java.util.UUID.randomUUID()}")
         try{
             context.contentResolver.openInputStream(uri)?.use{input->temp.outputStream().use{output->
-                val buffer=ByteArray(65536);var bytes=0;while(true){ensureActive();val n=input.read(buffer);if(n<0)break;bytes+=n;require(bytes<=20*1024*1024){"字体文件最大20MiB"};output.write(buffer,0,n)}
-            }}?:error("无法读取字体")
-            require(temp.length()>4){"字体文件为空或不完整"}
+                val buffer=ByteArray(65536);var bytes=0;while(true){ensureActive();val n=input.read(buffer);if(n<0)break;bytes+=n;require(bytes<=20*1024*1024){tr(R.string.ui_0627)};output.write(buffer,0,n)}
+            }}?:error(tr(R.string.ui_0628))
+            require(temp.length()>4){tr(R.string.ui_0629)}
             val magic=ByteArray(4);java.io.DataInputStream(temp.inputStream()).use{it.readFully(magic)}
-            require(magic.contentEquals(byteArrayOf(0,1,0,0))||String(magic,Charsets.ISO_8859_1) in listOf("OTTO","ttcf","true")){"请选择有效的TTF或OTF字体"}
+            require(magic.contentEquals(byteArrayOf(0,1,0,0))||String(magic,Charsets.ISO_8859_1) in listOf("OTTO","ttcf","true")){tr(R.string.ui_0630)}
             Typeface.createFromFile(temp)
-            val name=java.util.UUID.randomUUID().toString()+".font";check(temp.renameTo(File(directory,name))){"保存字体失败"};name
+            val name=java.util.UUID.randomUUID().toString()+".font";check(temp.renameTo(File(directory,name))){tr(R.string.ui_0631)};name
         }finally{temp.delete()}
     }
 }
@@ -67,16 +67,16 @@ object NovelFonts {
     var results by remember{mutableStateOf(emptyList<NovelHit>())};var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf("")}
     var requestId by remember{mutableIntStateOf(0)};var job by remember{mutableStateOf<Job?>(null)};val scope=rememberCoroutineScope();val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     DisposableEffect(Unit){onDispose{job?.cancel()}}
-    fun search(){keyboard?.hide();job?.cancel();val request=++requestId;val term=query.trim();if(term.isEmpty())return;results=emptyList();busy=true;message="正在查找…";job=scope.launch{try{
-        val found=if(full)NovelSearch.local(context,entry,term){done,total->scope.launch{if(request==requestId)message="正在搜索 $done / $total 章"}}else withContext(Dispatchers.Default){NovelSearch.hits(text,term,current)}
+    fun search(){keyboard?.hide();job?.cancel();val request=++requestId;val term=query.trim();if(term.isEmpty())return;results=emptyList();busy=true;message=tr(R.string.ui_0632);job=scope.launch{try{
+        val found=if(full)NovelSearch.local(context,entry,term){done,total->scope.launch{if(request==requestId)message=tr(R.string.ui_0633, done, total)}}else withContext(Dispatchers.Default){NovelSearch.hits(text,term,current)}
         if(request!=requestId)return@launch;results=found
-        message=if(results.isEmpty())"没有找到匹配内容"else"找到 ${results.size} 处"+if(results.size>=200)"，仅显示前200处，请缩小关键词"else""
+        message=if(results.isEmpty())tr(R.string.ui_0634)else tr(R.string.ui_0635, results.size)+if(results.size>=200)tr(R.string.ui_0636)else""
     }catch(e:CancellationException){throw e}catch(e:Exception){if(request==requestId)message=ContentRepository.friendlyError(e)}finally{if(request==requestId)busy=false}}}
     Column(Modifier.fillMaxWidth()){
-        Text("搜索正文",fontSize=21.sp)
-        Row{FilterChip(!full,{full=false;requestId++;job?.cancel();busy=false;results=emptyList()},label={Text("本章")});Spacer(Modifier.width(8.dp));FilterChip(full,{full=true;requestId++;job?.cancel();busy=false;results=emptyList()},enabled=entry.sourceId==LocalNovels.source.id,label={Text("全书 · 本地")})}
-        OutlinedTextField(query,{query=it.take(200);requestId++;job?.cancel();busy=false;results=emptyList();message=""},singleLine=true,label={Text("正文关键词")},modifier=Modifier.fillMaxWidth())
-        Row{TextButton(onClick={search()},enabled=query.isNotBlank()){Text("开始搜索")};if(busy)TextButton(onClick={requestId++;job?.cancel();busy=false;message="已停止搜索"}){Text("停止")}}
+        Text(tr(R.string.ui_0578),fontSize=21.sp)
+        Row{FilterChip(!full,{full=false;requestId++;job?.cancel();busy=false;results=emptyList()},label={Text(tr(R.string.ui_0638))});Spacer(Modifier.width(8.dp));FilterChip(full,{full=true;requestId++;job?.cancel();busy=false;results=emptyList()},enabled=entry.sourceId==LocalNovels.source.id,label={Text(tr(R.string.ui_0639))})}
+        OutlinedTextField(query,{query=it.take(200);requestId++;job?.cancel();busy=false;results=emptyList();message=""},singleLine=true,label={Text(tr(R.string.ui_0640))},modifier=Modifier.fillMaxWidth())
+        Row{TextButton(onClick={search()},enabled=query.isNotBlank()){Text(tr(R.string.ui_0641))};if(busy)TextButton(onClick={requestId++;job?.cancel();busy=false;message=tr(R.string.ui_0642)}){Text(tr(R.string.ui_0106))}}
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(message,fontSize=11.sp)
         LazyColumn(Modifier.heightIn(max=350.dp),contentPadding=PaddingValues(bottom=20.dp)){

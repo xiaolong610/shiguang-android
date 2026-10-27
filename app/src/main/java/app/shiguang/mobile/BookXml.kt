@@ -13,11 +13,11 @@ object BookXml {
         for(feature in listOf("http://xml.org/sax/features/external-general-entities","http://xml.org/sax/features/external-parameter-entities","http://apache.org/xml/features/nonvalidating/load-external-dtd"))runCatching{factory.setFeature(feature,false)}
         runCatching{factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true)}
         val reader=factory.newSAXParser().xmlReader
-        reader.entityResolver=org.xml.sax.EntityResolver{_,_->error("电子书不能引用外部实体")}
+        reader.entityResolver=org.xml.sax.EntityResolver{_,_->error(tr(R.string.ui_0084))}
         reader.contentHandler=handler;reader.parse(InputSource(input))
     }
     fun docx(file:File,sink:BookStorage){BookArchive(file).use{z->
-        require(z.has("word/document.xml")){"不是有效的DOCX文件"}
+        require(z.has("word/document.xml")){tr(R.string.ui_0085)}
         if(z.has("docProps/core.xml"))z.xml("docProps/core.xml").let{d->sink.bookTitle=d.getElementsByTag("dc:title").text();sink.author=d.getElementsByTag("dc:creator").text()}
         z.stream("word/document.xml").use{input->parse(input,object:DefaultHandler(){
             private var inText=false

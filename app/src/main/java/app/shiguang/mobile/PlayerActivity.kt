@@ -48,6 +48,7 @@ import java.util.UUID
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlayerActivity:ComponentActivity() {
+    override fun attachBaseContext(base:android.content.Context){super.attachBaseContext(AppLanguage.wrap(base))}
     override fun onResume(){super.onResume();ResolverWindow.activity=java.lang.ref.WeakReference(this)}
     private var controller by mutableStateOf<MediaController?>(null)
     private var inPip by mutableStateOf(false)
@@ -83,9 +84,9 @@ class PlayerActivity:ComponentActivity() {
                 onBrowser={openBrowser(this@PlayerActivity,info.page)},onStop={command(PlaybackSession.STOP);finish()},
                 onBackground={background=it;prefs.edit().putBoolean("backgroundPlayback",it).apply()},
                 onAutoPip={autoPip=it;prefs.edit().putBoolean("autoPip",it).apply();updatePip()},
-                onBoost={command(if(it)PlaybackSession.BOOST_START else PlaybackSession.BOOST_END)},onSources={sourceSheet=true},onDownload={if(!preparingDownload&&info.entry!=null){preparingDownload=true;downloadMessage="正在准备下载…";downloadJob=downloadScope.launch{try{while(!model.libraryReady&&model.libraryError.isBlank())delay(20);downloadMessage=VideoDownloads.add(this@PlayerActivity,model.source(info.entry!!.sourceId),info.entry!!,info.pages[info.chapter],info.chapter,info.line)}catch(e:CancellationException){throw e}catch(e:Exception){downloadMessage=ContentRepository.friendlyError(e)}finally{preparingDownload=false}}}})
-            if(downloadMessage.isNotBlank())AlertDialog(onDismissRequest={downloadJob?.cancel();downloadMessage=""},title={Text("视频下载")},text={Text(downloadMessage)},dismissButton={if(preparingDownload)TextButton(onClick={downloadJob?.cancel();downloadMessage=""}){Text("取消准备")}},confirmButton={TextButton(enabled=!preparingDownload,onClick={downloadMessage=""}){Text("知道了")}})
-            if(sourceSheet&&info.entry!=null)SourceSwitchSheet(model,info.entry!!,Detail(info.entry!!,listOf(Line("当前线路",info.pages))),
+                onBoost={command(if(it)PlaybackSession.BOOST_START else PlaybackSession.BOOST_END)},onSources={sourceSheet=true},onDownload={if(!preparingDownload&&info.entry!=null){preparingDownload=true;downloadMessage=tr(R.string.ui_0652);downloadJob=downloadScope.launch{try{while(!model.libraryReady&&model.libraryError.isBlank())delay(20);downloadMessage=VideoDownloads.add(this@PlayerActivity,model.source(info.entry!!.sourceId),info.entry!!,info.pages[info.chapter],info.chapter,info.line)}catch(e:CancellationException){throw e}catch(e:Exception){downloadMessage=ContentRepository.friendlyError(e)}finally{preparingDownload=false}}}})
+            if(downloadMessage.isNotBlank())AlertDialog(onDismissRequest={downloadJob?.cancel();downloadMessage=""},title={Text(tr(R.string.ui_0653))},text={Text(downloadMessage)},dismissButton={if(preparingDownload)TextButton(onClick={downloadJob?.cancel();downloadMessage=""}){Text(tr(R.string.ui_0654))}},confirmButton={TextButton(enabled=!preparingDownload,onClick={downloadMessage=""}){Text(tr(R.string.ui_0114))}})
+            if(sourceSheet&&info.entry!=null)SourceSwitchSheet(model,info.entry!!,Detail(info.entry!!,listOf(Line(tr(R.string.ui_0656),info.pages))),
                 progressOverride=Progress(info.entry!!,0,info.chapter,info.positionMs,System.currentTimeMillis(),info.title),onDismiss={sourceSheet=false}){result->
                 downloadScope.launch{try{model.applySourceSwitch(info.entry!!,result).await();sourceSheet=false
                 val source=model.source(result.detail.entry.sourceId)
@@ -93,12 +94,12 @@ class PlayerActivity:ComponentActivity() {
                 command(PlaybackSession.LOAD,Bundle().apply{putString("request",request.json().toString())})
                 }catch(e:CancellationException){throw e}catch(e:Exception){connectionError=ContentRepository.friendlyError(e)}}
             }
-            if(filterDialog)AlertDialog(onDismissRequest={filterDialog=false},title={Text("广告过滤")},text={Text("只过滤有充分依据的HLS插播片段。切片不等于广告；压进画面的广告无法识别。若误删，可关闭过滤并重载，进度按原时间线保存。\n\n"+(info.report?.message() ?: ""))},confirmButton={TextButton(onClick={command(PlaybackSession.FILTER);filterDialog=false}){Text(if(info.filter)"关闭过滤并重载" else "开启过滤并重载")}},dismissButton={TextButton(onClick={filterDialog=false}){Text("返回播放")}})
+            if(filterDialog)AlertDialog(onDismissRequest={filterDialog=false},title={Text(tr(R.string.ui_0657))},text={Text(tr(R.string.ui_0658)+(info.report?.message() ?: ""))},confirmButton={TextButton(onClick={command(PlaybackSession.FILTER);filterDialog=false}){Text(if(info.filter)tr(R.string.ui_0659) else tr(R.string.ui_0660))}},dismissButton={TextButton(onClick={filterDialog=false}){Text(tr(R.string.ui_0661))}})
         }}
         val f=MediaController.Builder(this,SessionToken(this,ComponentName(this,PlaybackService::class.java))).buildAsync();future=f
         f.addListener({
             try {if(isDestroyed)return@addListener;controller=f.get();controller?.addListener(object:Player.Listener{override fun onIsPlayingChanged(isPlaying:Boolean){updatePip()}});submitIntent()}
-            catch(e:Exception){connectionError="无法连接播放服务：${e.cause?.message ?: e.message}"}
+            catch(e:Exception){connectionError=tr(R.string.ui_0662, e.cause?.message ?: e.message)}
         },ContextCompat.getMainExecutor(this))
     }
     private fun submitIntent() {

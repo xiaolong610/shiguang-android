@@ -68,7 +68,7 @@ object VideoDownloads {
         }
         return DataSource.Factory{object:DataSource {
             private val upstream=resolving.createDataSource();private var checked=0L
-            private fun space(){if(context.filesDir.usableSpace<128L*1024*1024)throw IOException("可用空间不足128MiB，请清理空间后继续下载")}
+            private fun space(){if(context.filesDir.usableSpace<128L*1024*1024)throw IOException(tr(R.string.ui_0812))}
             override fun addTransferListener(listener:TransferListener)=upstream.addTransferListener(listener)
             override fun open(dataSpec:DataSpec):Long{space();return upstream.open(dataSpec)}
             override fun read(buffer:ByteArray,offset:Int,length:Int):Int{if(checked>=1024*1024){space();checked=0};return upstream.read(buffer,offset,length).also{if(it>0)checked+=it}}
@@ -93,20 +93,20 @@ object VideoDownloads {
         }
     }
     suspend fun add(context:Context,source:Source?,entry:Entry,chapter:Chapter,chapterIndex:Int=0,line:Int=0):String {
-        require(entry.kind==Kind.VIDEO){"仅视频支持下载"}
+        require(entry.kind==Kind.VIDEO){tr(R.string.ui_0813)}
         val app=context.applicationContext
         val id=SourceCodec.stableId(entry.key+"|"+chapter.url)
         val existingManager=withContext(Dispatchers.Main.immediate){manager(app)}
-        if(withContext(Dispatchers.IO){existingManager.downloadIndex.getDownload(id)?.state}==Download.STATE_COMPLETED)return "本集已下载，可在下载列表离线播放"
-        if(wifiOnly(app)){val connectivity=app.getSystemService(android.net.ConnectivityManager::class.java);require(connectivity.activeNetwork!=null&&!connectivity.isActiveNetworkMetered){"请连接Wi-Fi后下载，或在下载管理中允许移动网络"}}
-        require(withContext(Dispatchers.IO){app.filesDir.usableSpace}>=256L*1024*1024){"请先保留至少256MiB可用空间"}
+        if(withContext(Dispatchers.IO){existingManager.downloadIndex.getDownload(id)?.state}==Download.STATE_COMPLETED)return tr(R.string.ui_0814)
+        if(wifiOnly(app)){val connectivity=app.getSystemService(android.net.ConnectivityManager::class.java);require(connectivity.activeNetwork!=null&&!connectivity.isActiveNetworkMetered){tr(R.string.ui_0815)}}
+        require(withContext(Dispatchers.IO){app.filesDir.usableSpace}>=256L*1024*1024){tr(R.string.ui_0816)}
         val resolved=WebVideoResolver(context).resolve(source,chapter.url){}
         val headers=source?.let{ContentRepository(app).headers(it)}.orEmpty()+resolved.headers
         val metadata=JSONObject().put("entry",entry.json()).put("title",chapter.title).put("page",chapter.url).put("url",resolved.url).put("headers",JSONObject(headers)).put("chapterIndex",chapterIndex).put("line",line)
         return withContext(Dispatchers.Main.immediate){
             val m=manager(app)
             val old=withContext(Dispatchers.IO){m.downloadIndex.getDownload(id)}
-            if(old?.state==Download.STATE_COMPLETED)return@withContext "本集已下载，可在下载列表离线播放"
+            if(old?.state==Download.STATE_COMPLETED)return@withContext tr(R.string.ui_0814)
             val item=MediaItem.Builder().setUri(resolved.url).apply{if(resolved.mime.isNotBlank())setMimeType(resolved.mime)}.build()
             val request=if(androidx.media3.common.util.Util.inferContentTypeForUriAndMimeType(Uri.parse(resolved.url),resolved.mime.takeIf{it.isNotBlank()})==androidx.media3.common.C.CONTENT_TYPE_OTHER){
                 DownloadRequest.Builder(id,Uri.parse(resolved.url)).setMimeType(resolved.mime.takeIf{it.isNotBlank()}).setData(metadata.toString().toByteArray()).build()
@@ -119,7 +119,7 @@ object VideoDownloads {
                     override fun onPrepared(helper:DownloadHelper,tracksInfoAvailable:Boolean){if(continuation.isActive)try{
                         val selected=helper.getDownloadRequest(id,metadata.toString().toByteArray())
                         val manifest=helper.manifest
-                        if(manifest is androidx.media3.exoplayer.hls.HlsManifest&&manifest.multivariantPlaylist.variants.size>1)require(selected.streamKeys.any{it.groupIndex==0}){"未找到可下载的视频轨道，请更换线路"}
+                        if(manifest is androidx.media3.exoplayer.hls.HlsManifest&&manifest.multivariantPlaylist.variants.size>1)require(selected.streamKeys.any{it.groupIndex==0}){tr(R.string.ui_0818)}
                         continuation.resume(selected)
                     }catch(e:Exception){continuation.resumeWithException(e)}}
                     override fun onPrepareError(helper:DownloadHelper,e:IOException){if(continuation.isActive)continuation.resumeWithException(e)}
@@ -128,7 +128,7 @@ object VideoDownloads {
             }
             DownloadService.sendAddDownload(app,VideoDownloadService::class.java,request,true)
             DownloadService.sendResumeDownloads(app,VideoDownloadService::class.java,true)
-            "已加入下载，${if(wifiOnly(app))"等待或使用Wi-Fi"else"允许移动网络"}；可在下载列表管理"
+            tr(R.string.ui_0819, if(wifiOnly(app))tr(R.string.ui_0820)else tr(R.string.ui_0821))
         }
     }
     fun pause(context:Context,id:String)=DownloadService.sendSetStopReason(context,VideoDownloadService::class.java,id,1,false)
@@ -137,8 +137,8 @@ object VideoDownloads {
     fun wifi(context:Context,value:Boolean){context.getSharedPreferences("downloads",0).edit().putBoolean("wifi",value).apply();manager(context).requirements=requirements(context)}
     suspend fun completed(context:Context,id:String):DownloadRequest = withContext(Dispatchers.IO){
         val m=withContext(Dispatchers.Main.immediate){manager(context)}
-        val d=m.downloadIndex.getDownload(id)?:error("下载记录已移除")
-        require(d.state==Download.STATE_COMPLETED){"本集尚未下载完成"};d.request
+        val d=m.downloadIndex.getDownload(id)?:error(tr(R.string.ui_0822))
+        require(d.state==Download.STATE_COMPLETED){tr(R.string.ui_0823)};d.request
     }
     fun play(context:Context,item:OfflineVideo){
         require(item.state==Download.STATE_COMPLETED)
@@ -149,11 +149,12 @@ object VideoDownloads {
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class VideoDownloadService:DownloadService(33,1000,"shiguang-downloads",R.string.download_channel,0) {
+    override fun attachBaseContext(base:android.content.Context){super.attachBaseContext(AppLanguage.wrap(base))}
     override fun onTimeout(startId:Int,fgsType:Int){VideoDownloads.manager(this).pauseDownloads();stopSelf()}
     override fun getDownloadManager()=VideoDownloads.manager(this)
     override fun getScheduler():Scheduler?=null
     override fun getForegroundNotification(downloads:MutableList<Download>,notMetRequirements:Int):Notification {
         val intent=PendingIntent.getActivity(this,32,Intent(this,MainActivity::class.java).putExtra("openDownloads",true),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return DownloadNotificationHelper(this,"shiguang-downloads").buildProgressNotification(this,android.R.drawable.stat_sys_download,intent,"拾光视频下载",downloads,notMetRequirements)
+        return DownloadNotificationHelper(this,"shiguang-downloads").buildProgressNotification(this,android.R.drawable.stat_sys_download,intent,tr(R.string.ui_0824),downloads,notMetRequirements)
     }
 }

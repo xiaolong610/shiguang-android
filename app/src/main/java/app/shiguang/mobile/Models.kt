@@ -5,9 +5,10 @@ import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
 
-enum class Kind(val label: String) { VIDEO("影视"), COMIC("漫画"), NOVEL("小说") }
-enum class ContentCategory(val label:String,val kind:Kind) {
-    VIDEO("影视",Kind.VIDEO),ANIME("动画",Kind.VIDEO),COMIC("漫画",Kind.COMIC),NOVEL("小说",Kind.NOVEL);
+enum class Kind(private val labelId: Int) { VIDEO(R.string.ui_0409), COMIC(R.string.ui_0410), NOVEL(R.string.ui_0411); val label:String get()=tr(labelId) }
+enum class ContentCategory(private val labelId:Int,val kind:Kind) {
+    VIDEO(R.string.ui_0409,Kind.VIDEO),ANIME(R.string.ui_0413,Kind.VIDEO),COMIC(R.string.ui_0410,Kind.COMIC),NOVEL(R.string.ui_0411,Kind.NOVEL);
+    val label:String get()=tr(labelId)
     companion object {
         fun fromKind(kind:Kind)=when(kind){Kind.VIDEO->VIDEO;Kind.COMIC->COMIC;Kind.NOVEL->NOVEL}
         fun parse(value:String):ContentCategory?=when(value.lowercase(java.util.Locale.ROOT)){
@@ -25,7 +26,7 @@ data class Source(
 ) {
     fun json() = JSONObject().put("id", id).put("name", name).put("kind", kind.name.lowercase())
         .put("engine", engine).put("url", url).put("enabled", enabled).put("rules", JSONObject(rules))
-    val host: String get() = runCatching { URI(url).host }.getOrNull() ?: "本地示例"
+    val host: String get() = runCatching { URI(url).host }.getOrNull() ?: tr(R.string.ui_0423)
     val category:ContentCategory by lazy(LazyThreadSafetyMode.PUBLICATION){
         if(kind!=Kind.VIDEO)return@lazy ContentCategory.fromKind(kind)
         val r=runCatching{JSONObject(rules)}.getOrElse{JSONObject()}
@@ -69,7 +70,7 @@ object SourceCodec {
     fun stableId(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).take(12).joinToString("") { "%02x".format(it) }
     fun httpUrl(url: String): String {
         val uri = runCatching { URI(url.trim()) }.getOrNull()
-        require(uri != null && uri.scheme?.lowercase() in setOf("http","https") && !uri.host.isNullOrBlank() && uri.userInfo == null) { "请输入有效的 HTTP 或 HTTPS 地址" }
+        require(uri != null && uri.scheme?.lowercase() in setOf("http","https") && !uri.host.isNullOrBlank() && uri.userInfo == null) { tr(R.string.ui_0424) }
         return url.trim()
     }
     fun parse(text: String): List<Source> {
@@ -79,15 +80,15 @@ object SourceCodec {
             raw.startsWith("{") -> JSONObject(raw).let { it.optJSONArray("sources") ?: JSONArray().put(it) }
             else -> JSONArray().put(JSONObject().put("name", URI(httpUrl(raw)).host).put("engine","maccms").put("url",raw))
         }
-        require(array.length() in 1..500) { "每次可导入 1—500 个源" }
+        require(array.length() in 1..500) { tr(R.string.ui_0425) }
         return (0 until array.length()).map { i ->
             val o = array.getJSONObject(i)
             val engine = o.optString("engine").ifBlank { if(o.has("baseURL") && (o.has("searchList") || o.has("searchMode"))) "kazumi" else if(o.has("homepageUrl")||o.has("bookSourceName")) "ficket" else if(o.has("api")) "maccms" else "html" }
-            require(engine in setOf("maccms","html","kazumi","ficket")) { "不支持的源引擎：$engine" }
+            require(engine in setOf("maccms","html","kazumi","ficket")) { tr(R.string.ui_0426, engine) }
             val inferredKind=when{ o.has("contentRegex")->"novel";o.has("comicImageUrlListsRegex")||o.has("bookSourceName")->"comic";else->"video" }
             val rawKind=o.optString("kind",inferredKind)
-            val kind = if(rawKind.equals("anime",true))Kind.VIDEO else runCatching { Kind.valueOf(rawKind.uppercase()) }.getOrElse { error("kind 必须是 video、anime、comic 或 novel") }
-            require(engine != "maccms" || kind == Kind.VIDEO) { "maccms 引擎仅用于视频" }
+            val kind = if(rawKind.equals("anime",true))Kind.VIDEO else runCatching { Kind.valueOf(rawKind.uppercase()) }.getOrElse { error(tr(R.string.ui_0427)) }
+            require(engine != "maccms" || kind == Kind.VIDEO) { tr(R.string.ui_0428) }
             val url = httpUrl(o.optString("url").ifBlank { if(engine=="kazumi") o.optString("baseURL") else if(engine=="ficket")o.optString("homepageUrl").ifBlank{o.optString("bookSourceUrl")} else o.optString("api") })
             val rules = o.optJSONObject("rules") ?: if(engine=="kazumi"||engine=="ficket") JSONObject(o.toString()) else JSONObject()
             if(rawKind.equals("anime",true))rules.put("category","anime")
@@ -99,9 +100,9 @@ object SourceCodec {
             val knownAds=rules.optBoolean("knownAds") || o.optBoolean("adFilterEnabled") || original?.optBoolean("adFilterEnabled")==true || adNote.contains("广告") || AdSourceHints.known(url)
             if(knownAds){rules.put("knownAds",true);if(adNote.isNotBlank())rules.put("adSourceNote",adNote)}
             if(engine == "html") {
-                require(!rules.optString("searchUrl").isBlank() && !rules.optString("list").isBlank() && !rules.optString("title").isBlank()) { "网页源需要 rules.searchUrl、list 和 title" }
-                require(!rules.optString("chapters").isBlank()) { "网页源需要 rules.chapters 章节选择器" }
-                require(!rules.optString(if(kind == Kind.COMIC) "images" else if(kind == Kind.NOVEL) "content" else "media").isBlank()) { "网页源缺少正文、图片或媒体选择器" }
+                require(!rules.optString("searchUrl").isBlank() && !rules.optString("list").isBlank() && !rules.optString("title").isBlank()) { tr(R.string.ui_0430) }
+                require(!rules.optString("chapters").isBlank()) { tr(R.string.ui_0431) }
+                require(!rules.optString(if(kind == Kind.COMIC) "images" else if(kind == Kind.NOVEL) "content" else "media").isBlank()) { tr(R.string.ui_0432) }
             }
             val name=o.optString("name").ifBlank{o.optString("bookSourceName")}.ifBlank { URI(url).host }.take(80)
             val savedId=o.optString("id").takeIf{o.has("engine")&&it.matches(Regex("[a-f0-9]{24}"))}
@@ -114,8 +115,8 @@ object SourceCodec {
 object MacParser {
     fun entries(source: Source, json: String): List<Entry> {
         val root = JSONObject(json)
-        if(root.has("code") && root.optInt("code") == 0) error(root.optString("msg","接口拒绝了请求"))
-        val list = root.optJSONArray("list") ?: error("接口未返回 list；首版支持 MacCMS JSON 接口")
+        if(root.has("code") && root.optInt("code") == 0) error(root.optString("msg",tr(R.string.ui_0433)))
+        val list = root.optJSONArray("list") ?: error(tr(R.string.ui_0434))
         return (0 until list.length()).take(100).mapNotNull { i ->
             val o = list.optJSONObject(i) ?: return@mapNotNull null
             val id = o.optString("vod_id")
@@ -124,17 +125,17 @@ object MacParser {
         }
     }
     fun detail(entry: Entry, json: String): Detail {
-        val o = JSONObject(json).optJSONArray("list")?.optJSONObject(0) ?: error("未找到内容详情")
+        val o = JSONObject(json).optJSONArray("list")?.optJSONObject(0) ?: error(tr(R.string.ui_0435))
         val names = o.optString("vod_play_from").split("$$$")
         val urls = o.optString("vod_play_url").split("$$$")
         val lines = urls.mapIndexedNotNull { index, group ->
             val chapters = group.split('#').mapNotNull { item ->
                 val split = item.indexOf('$')
-                if(split < 0) null else Chapter(item.take(split).ifBlank { "播放" },item.substring(split+1).trim()).takeIf { it.url.startsWith("http://") || it.url.startsWith("https://") }
+                if(split < 0) null else Chapter(item.take(split).ifBlank { tr(R.string.ui_0241) },item.substring(split+1).trim()).takeIf { it.url.startsWith("http://") || it.url.startsWith("https://") }
             }
-            if(chapters.isEmpty()) null else Line(names.getOrNull(index)?.ifBlank { null } ?: "线路 ${index+1}", chapters)
+            if(chapters.isEmpty()) null else Line(names.getOrNull(index)?.ifBlank { null } ?: tr(R.string.ui_0299, index+1), chapters)
         }
-        require(lines.isNotEmpty()) { "此内容未提供可用的 HTTP 播放线路" }
+        require(lines.isNotEmpty()) { tr(R.string.ui_0438) }
         return Detail(entry.copy(description=org.jsoup.Jsoup.parse(o.optString("vod_content")).text()),lines)
     }
 }

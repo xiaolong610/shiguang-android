@@ -10,13 +10,13 @@ data class RuleRequest(val url:String,val method:String="GET",val headers:Map<St
 /** Deliberately bounded JSONPath subset: keys, indices and array wildcard. */
 object JsonRulePath {
     private fun tokens(path:String):List<String> {
-        require(path.startsWith('$')){"JSONPath需要以 $ 开头"}
+        require(path.startsWith('$')){tr(R.string.ui_0330)}
         val out=mutableListOf<String>();var i=1
         while(i<path.length) {
             when(path[i]) {
-                '.'->{i++;val start=i;while(i<path.length&&(path[i].isLetterOrDigit()||path[i]=='_'||path[i]=='-'))i++;require(i>start){"不支持此JSONPath：$path"};out.add(path.substring(start,i))}
-                '['->{val end=path.indexOf(']',i);require(end>i){"JSONPath括号不完整"};val t=path.substring(i+1,end);require(t=="*"||t.toIntOrNull()!=null||(t.startsWith("'")&&t.endsWith("'"))||(t.startsWith('"')&&t.endsWith('"'))){"暂不支持JSONPath过滤器或递归：$path"};out.add(if(t.startsWith("'")||t.startsWith('"'))t.substring(1,t.length-1) else "[$t]");i=end+1}
-                else->error("不支持此JSONPath：$path")
+                '.'->{i++;val start=i;while(i<path.length&&(path[i].isLetterOrDigit()||path[i]=='_'||path[i]=='-'))i++;require(i>start){tr(R.string.ui_0331, path)};out.add(path.substring(start,i))}
+                '['->{val end=path.indexOf(']',i);require(end>i){tr(R.string.ui_0332)};val t=path.substring(i+1,end);require(t=="*"||t.toIntOrNull()!=null||(t.startsWith("'")&&t.endsWith("'"))||(t.startsWith('"')&&t.endsWith('"'))){tr(R.string.ui_0333, path)};out.add(if(t.startsWith("'")||t.startsWith('"'))t.substring(1,t.length-1) else "[$t]");i=end+1}
+                else->error(tr(R.string.ui_0331, path))
             }
         };return out
     }
@@ -41,13 +41,13 @@ object KazumiApi {
         for(key in c.keys())if(key.endsWith("Path"))JsonRulePath.validate(c.optString(key))
         c.optJSONObject("variables")?.let {v->for(k in v.keys())JsonRulePath.validate(v.getString(k))}
         val req=c.getJSONObject("request")
-        require(req.optString("method","GET").uppercase() in setOf("GET","POST")){"API规则只支持GET/POST"}
-        require(req.optString("bodyType","none") in setOf("none","json","form")){"不支持API请求体类型"}
-        if(chapter)require(c.optString("format","nested") in setOf("nested","delimited")){"不支持此剧集API格式"}
+        require(req.optString("method","GET").uppercase() in setOf("GET","POST")){tr(R.string.ui_0335)}
+        require(req.optString("bodyType","none") in setOf("none","json","form")){tr(R.string.ui_0336)}
+        if(chapter)require(c.optString("format","nested") in setOf("nested","delimited")){tr(R.string.ui_0337)}
     }
     private val token=Regex("@[A-Za-z][A-Za-z0-9_]*")
     fun render(text:String,vars:Map<String,String>,encoded:Boolean=false):String=token.replace(text){m->
-        val value=vars[m.value.drop(1)] ?: error("规则变量暂不支持：${m.value}")
+        val value=vars[m.value.drop(1)] ?: error(tr(R.string.ui_0338, m.value))
         if(encoded)URLEncoder.encode(value,"UTF-8").replace("+","%20") else value
     }
     private fun url(text:String,vars:Map<String,String>):String {
@@ -80,7 +80,7 @@ object KazumiApi {
             val title=JsonRulePath.scalar(n,c.optString("namePath","$.name"));val source=JsonRulePath.scalar(n,c.optString("sourcePath","$.url"))
             if(title.isBlank()||source.isBlank())null else {
                 val template=c.optString("sourceTemplate");val target=if(template.isNotBlank())url(template,mapOf("source" to source)) else if(JSONObject(s.rules).optString("chapterMode","xpath")=="xpath")KazumiRules.normalize(s.url,source) else source
-                Entry(SourceCodec.stableId(target),s.id,JsoupText.clean(title),Kind.VIDEO,target,subtitle="动漫 · ${s.name}")
+                Entry(SourceCodec.stableId(target),s.id,JsoupText.clean(title),Kind.VIDEO,target,subtitle=tr(R.string.ui_0339, s.name))
             }
         }.distinctBy{it.key}
     }
@@ -93,7 +93,7 @@ object KazumiApi {
                 val v=vars+mapOf("episodeUrl" to rawUrl,"episodeName" to name,"roadIndex" to road.toString(),"episodeIndex" to index.toString())
                 val b=url(page.getString("url"),v).toHttpUrl().newBuilder();page.optJSONObject("query")?.let{q->for(k in q.keys())b.addQueryParameter(k,render(q.get(k).toString(),v))};b.build().toString()
             } else ContentRepository.resolve(s.url,rawUrl)
-            return if(!ContentRepository.isHttp(target)||rawUrl.isBlank()&&page==null)null else Chapter(name.ifBlank{"第${index+1}集"},target)
+            return if(!ContentRepository.isHttp(target)||rawUrl.isBlank()&&page==null)null else Chapter(name.ifBlank{tr(R.string.ui_0340, index+1)},target)
         }
         val lines=if(c.optString("format","nested")=="delimited") {
             val separator=c.optString("roadSeparator","$$$");require(separator.isNotEmpty())
@@ -101,13 +101,13 @@ object KazumiApi {
             JsonRulePath.scalar(root,c.optString("roadEpisodesPath")).split(separator).take(30).mapIndexedNotNull {i,road->
                 val es=c.optString("episodeSeparator","#");val fs=c.optString("fieldSeparator","$");require(es.isNotEmpty()&&fs.isNotEmpty())
                 val chapters=road.split(es).take(3000).mapIndexedNotNull{j,item->val at=item.indexOf(fs);if(at<0)null else chapter(item.take(at),item.substring(at+fs.length),i,j)}
-                if(chapters.isEmpty())null else Line(names.getOrNull(i).orEmpty().ifBlank{"线路 ${i+1}"},chapters)
+                if(chapters.isEmpty())null else Line(names.getOrNull(i).orEmpty().ifBlank{tr(R.string.ui_0299, i+1)},chapters)
             }
         } else (if(c.optString("roadsPath","$.data.roads[*]").isBlank())listOfNotNull(root) else JsonRulePath.values(root,c.optString("roadsPath","$.data.roads[*]"))).take(30).mapIndexedNotNull{i,road->
             val chapters=JsonRulePath.values(road,c.optString("episodesPath","$.episodes[*]")).take(3000).mapIndexedNotNull{j,ch->chapter(JsonRulePath.scalar(ch,c.optString("episodeNamePath","$.name")),JsonRulePath.scalar(ch,c.optString("episodeUrlPath","$.url")),i,j)}
-            if(chapters.isEmpty())null else Line(JsonRulePath.scalar(road,c.optString("roadNamePath","$.name")).ifBlank{"线路 ${i+1}"},chapters)
+            if(chapters.isEmpty())null else Line(JsonRulePath.scalar(road,c.optString("roadNamePath","$.name")).ifBlank{tr(R.string.ui_0299, i+1)},chapters)
         }
-        require(lines.isNotEmpty()){"API规则未提取到剧集，检查规则版本或接口状态"};return Detail(e,lines)
+        require(lines.isNotEmpty()){tr(R.string.ui_0343)};return Detail(e,lines)
     }
 }
 private object JsoupText {fun clean(s:String)=org.jsoup.Jsoup.parse(s).text()}

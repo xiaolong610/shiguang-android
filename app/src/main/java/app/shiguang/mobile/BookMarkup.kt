@@ -19,7 +19,7 @@ object BookMarkup {
                     inTag=false;quote='\u0000'
                 }else{
                     if(c==quote)quote='\u0000'else if(quote=='\u0000'&&(c=='\''||c=='\"'))quote=c
-                    require(tag.length<65536){"网页标签异常过长"};tag.append(c)
+                    require(tag.length<65536){tr(R.string.ui_0061)};tag.append(c)
                 }
             }
         };flush()

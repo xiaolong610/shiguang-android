@@ -58,7 +58,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
     fun selectMode(value:ComicTurnMode){if(value==mode)return;save();val image=if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex else pager.currentPage;mode=value;prefs.edit().putString("comicTurnMode",value.name).apply();scope.launch{if(value==ComicTurnMode.SCROLL)list.scrollToItem(image.coerceIn(0,page?.images?.size?:0))else pager.scrollToPage(image.coerceIn(0,pager.pageCount-1))}}
     BackHandler{if(sheet.isNotEmpty())sheet=""else leave()}
     LaunchedEffect(index,retry,source?.id){ready=false;page=null;failure=null
-        try{val loaded=model.repo.readingPage(source?:error("原内容源已移除"),entry,chapters[index],force=retry>0);require(loaded.images.isNotEmpty()){"本话没有可显示的图片"};page=loaded
+        try{val loaded=model.repo.readingPage(source?:error(tr(R.string.ui_0214)),entry,chapters[index],force=retry>0);require(loaded.images.isNotEmpty()){tr(R.string.ui_0215)};page=loaded
             val saved=prefs.getString(positionKey(),null)?.split(':');val image=if(openAtEnd)loaded.images.lastIndex else(saved?.getOrNull(0)?.toIntOrNull()?:0).coerceIn(0,loaded.images.size)
             withFrameNanos{};if(mode==ComicTurnMode.SCROLL){list.scrollToItem(image,if(openAtEnd)0 else saved?.getOrNull(1)?.toIntOrNull()?:0)
                 if(saved==null&&!openAtEnd){val old=withContext(Dispatchers.IO){model.store.progressFor(entry.key)}?.takeIf{it.line==line&&it.chapter==index};if(old!=null&&old.offset>0)list.scrollBy(old.offset.toFloat())}
@@ -79,36 +79,36 @@ import kotlinx.coroutines.flow.distinctUntilChanged
     @Composable fun image(i:Int,paged:Boolean){
         var imageRetry by remember(index,i){mutableIntStateOf(0)}
         key(imageRetry){SubcomposeAsyncImage(model=ReadingPreload.image(context,model.repo,source,page!!.images[i],imageWidth,retry=imageRetry>0),imageLoader=loader,
-            contentDescription="第 ${i+1} 页",contentScale=if(paged)ContentScale.Fit else ContentScale.FillWidth,
+            contentDescription=tr(R.string.ui_0216, i+1),contentScale=if(paged)ContentScale.Fit else ContentScale.FillWidth,
             loading={Box(Modifier.fillMaxWidth().heightIn(min=180.dp),contentAlignment=Alignment.Center){CircularProgressIndicator(Modifier.size(28.dp))}},
-            error={Column(Modifier.fillMaxWidth().heightIn(min=180.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text("第 ${i+1} 页加载失败",color=fg);TextButton(onClick={imageRetry++}){Text("重新加载图片")}}},
+            error={Column(Modifier.fillMaxWidth().heightIn(min=180.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(tr(R.string.ui_0217, i+1),color=fg);TextButton(onClick={imageRetry++}){Text(tr(R.string.ui_0218))}}},
             modifier=if(paged)Modifier.fillMaxSize()else Modifier.fillMaxWidth().heightIn(min=160.dp))}
     }
-    @Composable fun end(){Column(Modifier.fillMaxWidth().heightIn(min=if(mode==ComicTurnMode.SCROLL)screenHeight else 0.dp).padding(32.dp),horizontalAlignment=Alignment.CenterHorizontally){Text("本话共 ${page?.images?.size?:0} 页",color=fg,fontSize=13.sp);TextButton(enabled=index<chapters.lastIndex,onClick={change(index+1)}){Text(if(index<chapters.lastIndex)"下一话"else"已读至最后一话")}}}
+    @Composable fun end(){Column(Modifier.fillMaxWidth().heightIn(min=if(mode==ComicTurnMode.SCROLL)screenHeight else 0.dp).padding(32.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(tr(R.string.ui_0219, page?.images?.size?:0),color=fg,fontSize=13.sp);TextButton(enabled=index<chapters.lastIndex,onClick={change(index+1)}){Text(if(index<chapters.lastIndex)tr(R.string.ui_0220)else tr(R.string.ui_0221))}}}
     Box(Modifier.fillMaxSize().background(bg).statusBarsPadding().navigationBarsPadding()){
         when{
-            failure!=null->Column(Modifier.align(Alignment.Center).padding(24.dp)){Text(failure!!,color=fg);TextButton(onClick={retry++}){Text("重试")}}
+            failure!=null->Column(Modifier.align(Alignment.Center).padding(24.dp)){Text(failure!!,color=fg);TextButton(onClick={retry++}){Text(tr(R.string.ui_0097))}}
             page==null->CircularProgressIndicator(Modifier.align(Alignment.Center))
-            mode==ComicTurnMode.SCROLL->LazyColumn(state=list,modifier=Modifier.fillMaxSize().semantics{contentDescription="漫画条漫阅读区"}.pointerInput(index){detectTapGestures(onTap={menu=!menu})}){items(page!!.images.size,key={it}){image(it,false)};item{end()}}
-            else->HorizontalPager(state=pager,reverseLayout=mode==ComicTurnMode.RIGHT,modifier=Modifier.fillMaxSize().semantics{contentDescription="漫画分页阅读区"}){i->
+            mode==ComicTurnMode.SCROLL->LazyColumn(state=list,modifier=Modifier.fillMaxSize().semantics{contentDescription=tr(R.string.ui_0223)}.pointerInput(index){detectTapGestures(onTap={menu=!menu})}){items(page!!.images.size,key={it}){image(it,false)};item{end()}}
+            else->HorizontalPager(state=pager,reverseLayout=mode==ComicTurnMode.RIGHT,modifier=Modifier.fillMaxSize().semantics{contentDescription=tr(R.string.ui_0224)}){i->
                 Box(Modifier.fillMaxSize().pointerInput(index,mode){detectTapGestures(onTap={p->when{p.x<size.width*.3f->turn(mode==ComicTurnMode.RIGHT);p.x>size.width*.7f->turn(mode!=ComicTurnMode.RIGHT);else->menu=!menu}})}){if(i<page!!.images.size)image(i,true)else Box(Modifier.align(Alignment.Center)){end()}}
             }
         }
-        if(page!=null&&!menu){Text("${if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex.coerceAtMost(page!!.images.lastIndex)+1 else(pager.currentPage+1).coerceAtMost(page!!.images.size)} / ${page!!.images.size}",color=fg.copy(alpha=.65f),fontSize=10.sp,modifier=Modifier.align(Alignment.BottomEnd).background(bg.copy(alpha=.85f)).clickable{menu=true}.padding(8.dp).semantics{contentDescription="唤出漫画操作"})}
+        if(page!=null&&!menu){Text("${if(mode==ComicTurnMode.SCROLL)list.firstVisibleItemIndex.coerceAtMost(page!!.images.lastIndex)+1 else(pager.currentPage+1).coerceAtMost(page!!.images.size)} / ${page!!.images.size}",color=fg.copy(alpha=.65f),fontSize=10.sp,modifier=Modifier.align(Alignment.BottomEnd).background(bg.copy(alpha=.85f)).clickable{menu=true}.padding(8.dp).semantics{contentDescription=tr(R.string.ui_0225)})}
         if(menu){
-            TopAppBar(title={Text(chapters[index].title,fontSize=14.sp,maxLines=1,overflow=TextOverflow.Ellipsis)},navigationIcon={IconButton(onClick={leave()}){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回")}},windowInsets=WindowInsets(0,0,0,0),colors=TopAppBarDefaults.topAppBarColors(containerColor=bg,titleContentColor=fg,navigationIconContentColor=fg),modifier=Modifier.align(Alignment.TopCenter))
+            TopAppBar(title={Text(chapters[index].title,fontSize=14.sp,maxLines=1,overflow=TextOverflow.Ellipsis)},navigationIcon={IconButton(onClick={leave()}){Icon(Icons.AutoMirrored.Outlined.ArrowBack,tr(R.string.ui_0226))}},windowInsets=WindowInsets(0,0,0,0),colors=TopAppBarDefaults.topAppBarColors(containerColor=bg,titleContentColor=fg,navigationIconContentColor=fg),modifier=Modifier.align(Alignment.TopCenter))
             Surface(color=bg,modifier=Modifier.align(Alignment.BottomCenter).fillMaxWidth()){
-                Row(Modifier.heightIn(min=52.dp).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceEvenly){TextButton(enabled=index>0,onClick={change(index-1)}){Text("上一话")};TextButton(onClick={sheet="chapters"}){Text("目录")};TextButton(onClick={sheet="settings"}){Text("设置")};TextButton(enabled=index<chapters.lastIndex,onClick={change(index+1)}){Text("下一话")}}
+                Row(Modifier.heightIn(min=52.dp).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceEvenly){TextButton(enabled=index>0,onClick={change(index-1)}){Text(tr(R.string.ui_0227))};TextButton(onClick={sheet="chapters"}){Text(tr(R.string.ui_0228))};TextButton(onClick={sheet="settings"}){Text(tr(R.string.ui_0229))};TextButton(enabled=index<chapters.lastIndex,onClick={change(index+1)}){Text(tr(R.string.ui_0220))}}
             }
         }
     }
     if(sheet.isNotEmpty())ModalBottomSheet(onDismissRequest={sheet=""},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=bg,contentColor=fg){
         if(sheet=="settings")Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(24.dp)){
-            Text("漫画阅读设置",fontSize=21.sp);Spacer(Modifier.height(18.dp));Text("翻页方式",fontSize=14.sp)
+            Text(tr(R.string.ui_0231),fontSize=21.sp);Spacer(Modifier.height(18.dp));Text(tr(R.string.ui_0232),fontSize=14.sp)
             ComicTurnMode.entries.forEach{value->Row(Modifier.fillMaxWidth().clickable{selectMode(value)}.padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically){RadioButton(selected=mode==value,onClick={selectMode(value)});Column{Text(value.label);Text(value.hint,fontSize=12.sp,color=fg.copy(alpha=.6f))}}}
-            HorizontalDivider();Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("夜间配色",Modifier.weight(1f));Switch(night,onCheckedChange={night=it;prefs.edit().putBoolean("night",night).apply()})};Text("点页面中间可展开或收起操作栏",color=fg.copy(alpha=.6f),fontSize=12.sp)
+            HorizontalDivider();Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text(tr(R.string.ui_0233),Modifier.weight(1f));Switch(night,onCheckedChange={night=it;prefs.edit().putBoolean("night",night).apply()})};Text(tr(R.string.ui_0234),color=fg.copy(alpha=.6f),fontSize=12.sp)
         }else Column(Modifier.fillMaxWidth().heightIn(max=550.dp).navigationBarsPadding().padding(horizontal=20.dp)){
-            Row(verticalAlignment=Alignment.CenterVertically){Text("目录 · ${chapters.size} 话",Modifier.weight(1f));ChapterSortButton(reverse){reverse=!reverse;sortPrefs.edit().putBoolean(Kind.COMIC.name,reverse).apply()}}
+            Row(verticalAlignment=Alignment.CenterVertically){Text(tr(R.string.ui_0235, chapters.size),Modifier.weight(1f));ChapterSortButton(reverse){reverse=!reverse;sortPrefs.edit().putBoolean(Kind.COMIC.name,reverse).apply()}}
             LazyColumn{items(chapterDisplayIndices(chapters.size,reverse),key={it}){i->Text(chapters[i].title,color=if(i==index)Color(0xFF3975C6)else fg,fontSize=14.sp,modifier=Modifier.fillMaxWidth().clickable{change(i);sheet=""}.padding(vertical=16.dp))}}
         }
     }

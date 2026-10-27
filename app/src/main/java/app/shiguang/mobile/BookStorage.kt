@@ -12,7 +12,7 @@ import java.security.MessageDigest
 class BookStorage(private val root:File,private val checkAlive:()->Unit={}) {
     private val chapters=JSONArray()
     private val pending=StringBuilder()
-    private var title="正文"
+    private var title=tr(R.string.ui_0077)
     private var part=1
     private var chars=0L
     private val digest=MessageDigest.getInstance("SHA-256")
@@ -20,7 +20,7 @@ class BookStorage(private val root:File,private val checkAlive:()->Unit={}) {
     var author:String=""
     var inputFormat:String=""
     init{root.mkdirs();File(root,"chapters").mkdirs()}
-    fun startChapter(value:String){flush();title=value.trim().take(160).ifBlank{"正文"};part=1}
+    fun startChapter(value:String){flush();title=value.trim().take(160).ifBlank{tr(R.string.ui_0077)};part=1}
     fun append(value:String){
         checkAlive()
         var at=0
@@ -39,8 +39,8 @@ class BookStorage(private val root:File,private val checkAlive:()->Unit={}) {
         val text=pending.substring(0,end).trim();pending.delete(0,end)
         if(text.isBlank())return
         chars+=text.length
-        require(chars<=240L*1024*1024){"解码后的正文过大，请分卷导入"}
-        require(chapters.length()<24000){"章节超过24000，请分卷导入"}
+        require(chars<=240L*1024*1024){tr(R.string.ui_0079)}
+        require(chapters.length()<24000){tr(R.string.ui_0080)}
         val filename="chapters/${chapters.length()}.txt"
         File(root,filename).writeText(text)
         val shown=if(part==1)title else "$title · $part"
@@ -48,7 +48,7 @@ class BookStorage(private val root:File,private val checkAlive:()->Unit={}) {
         digest.update(shown.toByteArray());digest.update(0.toByte());digest.update(text.toByteArray());digest.update(0.toByte());part++
     }
     private fun flush(){flushChunk(true)}
-    fun finish():Pair<String,JSONArray>{flush();require(chapters.length()>0){"未找到可阅读文字；扫描图片文件需要先识别为文字"};return digest.digest().take(12).joinToString(""){"%02x".format(it)} to chapters}
+    fun finish():Pair<String,JSONArray>{flush();require(chapters.length()>0){tr(R.string.ui_0081)};return digest.digest().take(12).joinToString(""){"%02x".format(it)} to chapters}
 }
 
 object BookText {
@@ -63,7 +63,7 @@ object BookText {
             else sink.append(value+if(newline)"\n"else "")
             line.setLength(0);continued=!newline
         }
-        while(true){val n=reader.read(buffer);if(n<0)break;for(i in 0 until n){val c=buffer[i];if(c=='\u0000')error("文件含二进制数据，请检查格式");if(c=='\n'){emit(true)}else{line.append(c);if(line.length>=8192)emit(false)}}}
+        while(true){val n=reader.read(buffer);if(n<0)break;for(i in 0 until n){val c=buffer[i];if(c=='\u0000')error(tr(R.string.ui_0083));if(c=='\n'){emit(true)}else{line.append(c);if(line.length>=8192)emit(false)}}}
         if(line.isNotEmpty())emit(true)
     }
     fun reader(file:File):Reader {

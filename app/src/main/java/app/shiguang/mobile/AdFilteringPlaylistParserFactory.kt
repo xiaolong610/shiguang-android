@@ -24,15 +24,15 @@ class AdFilteringPlaylistParserFactory(
         val raw=input.readBytesLimited(6*1024*1024)
         val text=String(raw,Charsets.UTF_8)
         val result=when {
-            !enabled()->AdFilterResult(text,text.contains("#EXTINF:"),reason="广告过滤已关闭")
-            alternateRenditions->AdFilterResult(text,text.contains("#EXTINF:"),reason="独立音轨或字幕需同步，未改动正片")
+            !enabled()->AdFilterResult(text,text.contains("#EXTINF:"),reason=tr(R.string.ui_0000))
+            alternateRenditions->AdFilterResult(text,text.contains("#EXTINF:"),reason=tr(R.string.ui_0001))
             else->HlsAdFilter.clean(text,uri.toString(),knownAdSource)
         }
         // Validate the edited text using Media3 itself; if parsing fails, use the original bytes.
         val parsed=try {parser.parse(uri,ByteArrayInputStream(result.text.toByteArray(Charsets.UTF_8)))}catch(e:Exception){
             if(result.removed.isEmpty())throw e
             val original=parser.parse(uri,ByteArrayInputStream(raw))
-            report(uri,AdFilterResult(text,true,reason="过滤结果校验失败，已保留原始播放"))
+            report(uri,AdFilterResult(text,true,reason=tr(R.string.ui_0002)))
             return@Parser original
         }
         if(result.mediaPlaylist)report(uri,result)

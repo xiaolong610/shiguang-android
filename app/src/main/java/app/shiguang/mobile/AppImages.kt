@@ -10,6 +10,8 @@ import coil.memory.MemoryCache
 import java.io.File
 
 class ShiguangApplication:Application(),ImageLoaderFactory {
+    override fun onCreate(){super.onCreate();AppLanguage.initialize(this)}
+    override fun onConfigurationChanged(config:android.content.res.Configuration){super.onConfigurationChanged(config);AppLanguage.refresh()}
     override fun newImageLoader()=AppImages.get(this)
     override fun onTrimMemory(level:Int){super.onTrimMemory(level);if(level>=ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)AppImages.trim()}
     override fun onLowMemory(){super.onLowMemory();AppImages.trim()}

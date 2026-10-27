@@ -49,10 +49,10 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
     }
     private fun decode(response:Response,maxBytes:Int):String = response.use { response ->
             if(!response.isSuccessful) error("HTTP ${response.code}")
-            val body=response.body ?: error("服务器返回了空内容")
-            require(body.contentLength() <= maxBytes || body.contentLength() == -1L) { "内容超过大小限制" }
+            val body=response.body ?: error(tr(R.string.ui_0236))
+            require(body.contentLength() <= maxBytes || body.contentLength() == -1L) { tr(R.string.ui_0237) }
             val bytes=body.byteStream().use { it.readBytesLimited(maxBytes) }
-            require(bytes.size<=maxBytes) { "内容超过大小限制" }
+            require(bytes.size<=maxBytes) { tr(R.string.ui_0237) }
             val declared=body.contentType()?.charset()
             val meta=if(declared==null)Regex("(?i)charset\\s*=\\s*['\"]?([A-Za-z0-9_-]+)").find(String(bytes,0,minOf(bytes.size,4096),Charsets.ISO_8859_1))?.groupValues?.get(1)?.let{runCatching{charset(it)}.getOrNull()}else null
             String(bytes,declared ?: meta ?: Charsets.UTF_8)
@@ -124,9 +124,9 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
         return withContext(Dispatchers.Default){detailUncached(s,e)}.also{DetailMemoryCache.shared.put(key,it)}
     }
     private suspend fun detailUncached(s: Source,e: Entry): Detail = when(s.engine) {
-        "local" -> withContext(Dispatchers.IO){LocalNovels(appContext?:error("无法打开本地书籍")).detail(e)}
+        "local" -> withContext(Dispatchers.IO){LocalNovels(appContext?:error(tr(R.string.ui_0239))).detail(e)}
         "demo" -> Demo.detail(e)
-        "direct" -> Detail(e,listOf(Line("视频链接",listOf(Chapter("播放",e.url)))))
+        "direct" -> Detail(e,listOf(Line(tr(R.string.ui_0030),listOf(Chapter(tr(R.string.ui_0241),e.url)))))
         "maccms" -> MacParser.detail(e,fetch(api(s,"ac" to "detail","ids" to e.id),headers(s)))
         "ficket" -> FicketRepository(this,appContext).detail(s,e)
         "kazumi" -> {val raw=kazumiFetch(s,false,source=e.url);withContext(Dispatchers.Default){if(JSONObject(s.rules).optString("chapterMode")=="api")KazumiApi.detail(s,e,raw) else KazumiRules.detail(s,e,raw)}}
@@ -137,34 +137,34 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
                 val href=el.attr(r.optString("chapterAttr","href"))
                 if(href.isBlank() || href.startsWith('#'))return@mapNotNull null
                 val url=resolve(e.url,href)
-                if(isHttp(url)) Chapter(el.text().ifBlank { el.attr("title") }.ifBlank { "未命名章节" },url) else null
+                if(isHttp(url)) Chapter(el.text().ifBlank { el.attr("title") }.ifBlank { tr(R.string.ui_0242) },url) else null
             }.distinctBy { it.url }
-            require(chapters.isNotEmpty()) { "未提取到章节，请检查源的章节选择器" }
+            require(chapters.isNotEmpty()) { tr(R.string.ui_0243) }
             val description=r.optString("description").takeIf { it.isNotBlank() }?.let { doc.select(it).text() } ?: e.description
-            Detail(e.copy(description=description),listOf(Line("章节",if(r.optBoolean("reverseChapters")) chapters.reversed() else chapters)))
+            Detail(e.copy(description=description),listOf(Line(tr(R.string.ui_0244),if(r.optBoolean("reverseChapters")) chapters.reversed() else chapters)))
         }
     }
     suspend fun readingPage(s:Source,e:Entry,chapter:Chapter,force:Boolean=false):PageContent = ReadingPageCache.shared.load(
         SourceCodec.stableId(s.json().toString()+"|"+e.key+"|"+chapter.url),force){page(s,e,chapter)}
     suspend fun page(s:Source,e:Entry,chapter:Chapter):PageContent=withContext(Dispatchers.Default){pageUncached(s,e,chapter)}
     private suspend fun pageUncached(s: Source,e: Entry,chapter: Chapter): PageContent {
-        if(s.engine=="local")return withContext(Dispatchers.IO){LocalNovels(appContext?:error("无法打开本地书籍")).page(e,chapter)}
+        if(s.engine=="local")return withContext(Dispatchers.IO){LocalNovels(appContext?:error(tr(R.string.ui_0239))).page(e,chapter)}
         if(s.engine=="demo") return Demo.page(e,chapter)
         if(s.engine=="ficket")return FicketRepository(this,appContext).page(s,e,chapter)
         val r=JSONObject(s.rules)
         val doc=Jsoup.parse(fetch(chapter.url,headers(s)),chapter.url)
         return if(e.kind==Kind.COMIC) {
             val images=doc.select(r.getString("images")).map { it.attr(r.optString("imageAttr","src")) }.filter{it.isNotBlank()}.map{resolve(chapter.url,it)}.filter { isHttp(it) }.distinct()
-            require(images.isNotEmpty()) { "未提取到图片；首版网页源只解析服务器返回的 HTML" }
+            require(images.isNotEmpty()) { tr(R.string.ui_0246) }
             PageContent(images=images)
         } else {
             val body=doc.select(r.getString("content"))
-            require(body.isNotEmpty()) { "未提取到正文，请检查正文选择器" }
+            require(body.isNotEmpty()) { tr(R.string.ui_0247) }
             body.select("script,style,iframe,button").remove()
             body.select("br").forEach { it.before("\\n") }
             body.select("p,div").forEach { it.prepend("\\n") }
             val text=body.text().replace("\\n","\n").split('\n').map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
-            require(text.isNotBlank()) { "章节正文为空" }
+            require(text.isNotBlank()) { tr(R.string.ui_0248) }
             PageContent(text=text)
         }
     }
@@ -173,30 +173,30 @@ class ContentRepository(private val appContext:android.content.Context?=null) {
         if(s.engine != "html") return SourceCodec.httpUrl(ch.url)
         val r=JSONObject(s.rules)
         val doc=Jsoup.parse(fetch(ch.url,headers(s)),ch.url)
-        val el=doc.selectFirst(r.getString("media")) ?: error("未找到视频地址，可用浏览器打开原页面")
+        val el=doc.selectFirst(r.getString("media")) ?: error(tr(R.string.ui_0249))
         return SourceCodec.httpUrl(resolve(ch.url,el.attr(r.optString("mediaAttr","src"))))
     }
     companion object {
         fun isHttp(url: String) = runCatching { SourceCodec.httpUrl(url) }.isSuccess
         fun resolve(base: String,value: String): String = runCatching { URI(base).resolve(value.trim()).toString() }.getOrDefault("")
         fun friendlyError(t: Throwable): String = when(t) {
-            is java.net.SocketTimeoutException -> "请求超时，请稍后重试"
-            is java.net.UnknownHostException -> "无法连接网站，请检查网络或源地址"
-            is javax.net.ssl.SSLException -> "网站证书验证失败"
-            else -> t.message?.take(160) ?: "加载失败"
+            is java.net.SocketTimeoutException -> tr(R.string.ui_0250)
+            is java.net.UnknownHostException -> tr(R.string.ui_0251)
+            is javax.net.ssl.SSLException -> tr(R.string.ui_0252)
+            else -> t.message?.take(160) ?: tr(R.string.ui_0253)
         }
     }
 }
 
 object Demo {
-    val sources=Kind.entries.map { Source("demo-${it.name}","拾光示例 · ${it.label}",it,"demo") }
-    val entries=listOf(
-        Entry("light","demo-VIDEO","山海之间",Kind.VIDEO,"demo:video",subtitle="原创光影 · 离线播放示例",description="一段十二秒的流动光影，配上轻柔的合成音。用于测试原生视频播放、横竖屏、倍速和播放进度，不需要联网。"),
-        Entry("night","demo-COMIC","月亮便利店",Kind.COMIC,"demo:comic",subtitle="原创短篇 · 离线阅读",description="一个深夜，一家还亮着灯的便利店，一封没有地址的信。拾光自带的原创示例漫画，三页一话，可离线阅读。"),
-        Entry("letter","demo-NOVEL","把今天寄给明天",Kind.NOVEL,"demo:novel",subtitle="原创故事 · 三章完结",description="海边小镇的邮局里，有一个只接收寄给未来的信箱。原创示例故事，可离线阅读。")
+    val sources get()=Kind.entries.map { Source("demo-${it.name}",tr(R.string.ui_0254, it.label),it,"demo") }
+    val entries get()=listOf(
+        Entry("light","demo-VIDEO","山海之间",Kind.VIDEO,"demo:video",subtitle=tr(R.string.ui_0256),description=tr(R.string.ui_0257)),
+        Entry("night","demo-COMIC","月亮便利店",Kind.COMIC,"demo:comic",subtitle=tr(R.string.ui_0259),description=tr(R.string.ui_0260)),
+        Entry("letter","demo-NOVEL","把今天寄给明天",Kind.NOVEL,"demo:novel",subtitle=tr(R.string.ui_0262),description=tr(R.string.ui_0263))
     )
-    fun detail(e: Entry): Detail = Detail(e,listOf(Line(if(e.kind==Kind.VIDEO) "视频示例" else "目录",when(e.kind) {
-        Kind.VIDEO -> listOf(Chapter("十二秒的光","asset:///sample.mp4"))
+    fun detail(e: Entry): Detail = Detail(e,listOf(Line(if(e.kind==Kind.VIDEO) tr(R.string.ui_0264) else tr(R.string.ui_0228),when(e.kind) {
+        Kind.VIDEO -> listOf(Chapter(tr(R.string.ui_0266),"asset:///sample.mp4"))
         Kind.COMIC -> listOf(Chapter("第 1 话 · 今晚也有光","demo:comic:1"))
         Kind.NOVEL -> listOf(Chapter("第一章 · 蓝色信箱","demo:novel:1"),Chapter("第二章 · 慢一点的时间","demo:novel:2"),Chapter("第三章 · 明天见","demo:novel:3"))
     })))

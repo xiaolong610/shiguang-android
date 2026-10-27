@@ -24,10 +24,10 @@ data class AdFilterResult(
         return ((seconds+cut)*1000).roundToLong().coerceAtLeast(0)
     }
     fun message():String = when {
-        removed.isNotEmpty() -> "已过滤 ${removed.size} 段${if(removed.any{it.evidence=="known-source-island"}) "疑似插播" else "广告"} · 约 ${removedSeconds.roundToLong()} 秒"
+        removed.isNotEmpty() -> tr(R.string.ui_0312, removed.size, if(removed.any{it.evidence=="known-source-island"}) tr(R.string.ui_0313) else tr(R.string.ui_0314), removedSeconds.roundToLong())
         reason.isNotBlank() -> reason
-        uncertainBlocks>0 -> "有 $uncertainBlocks 处短片段，依据不足未删除 · 可尝试换线路"
-        else -> "未发现可确认的广告标记"
+        uncertainBlocks>0 -> tr(R.string.ui_0315, uncertainBlocks)
+        else -> tr(R.string.ui_0316)
     }
 }
 
@@ -42,10 +42,10 @@ object HlsAdFilter {
         val media=lines.any{it.startsWith("#EXTINF:")}
         fun unchanged(reason:String="",total:Double=0.0,discs:Int=0,uncertain:Int=0)=AdFilterResult(text,media,originalSeconds=total,discontinuities=discs,reason=reason,uncertainBlocks=uncertain)
         if(!media)return unchanged()
-        if(lines.firstOrNull()?.trim()!="#EXTM3U")return unchanged("播放清单格式无法确认，未改动正片")
-        if(lines.none{it.trim()=="#EXT-X-ENDLIST"})return unchanged("直播或未结束的清单：暂不自动删片")
-        if(lines.any{it.startsWith("#EXT-X-KEY:") && !Regex("(?:^|,)METHOD=NONE(?:,|$)").containsMatchIn(it.substringAfter(':'))})return unchanged("加密分片：暂不自动删片，建议换线路")
-        if(lines.any{line->listOf("#EXT-X-BYTERANGE:","#EXT-X-MAP:","#EXT-X-PART:","#EXT-X-SKIP:","#EXT-X-PRELOAD-HINT:","#EXT-X-I-FRAMES-ONLY").any{line.startsWith(it)}})return unchanged("分片结构暂不支持过滤，未改动正片")
+        if(lines.firstOrNull()?.trim()!="#EXTM3U")return unchanged(tr(R.string.ui_0317))
+        if(lines.none{it.trim()=="#EXT-X-ENDLIST"})return unchanged(tr(R.string.ui_0318))
+        if(lines.any{it.startsWith("#EXT-X-KEY:") && !Regex("(?:^|,)METHOD=NONE(?:,|$)").containsMatchIn(it.substringAfter(':'))})return unchanged(tr(R.string.ui_0319))
+        if(lines.any{line->listOf("#EXT-X-BYTERANGE:","#EXT-X-MAP:","#EXT-X-PART:","#EXT-X-SKIP:","#EXT-X-PRELOAD-HINT:","#EXT-X-I-FRAMES-ONLY").any{line.startsWith(it)}})return unchanged(tr(R.string.ui_0320))
         val segments=mutableListOf<Segment>();val cueRanges=mutableListOf<IntRange>()
         var previousUri=-1;var ext=-1;var duration=0.0;var time=0.0;var group=0;var discs=0
         var cueStart:Int?=null;var cueExpected:Double?=null;var invalidCue=false
@@ -69,17 +69,17 @@ object HlsAdFilter {
                     }
                     cueStart=null;cueExpected=null
                 }
-                line.startsWith("#EXTINF:")->{if(ext>=0)return unchanged("播放清单片段不完整，未改动正片");ext=i;duration=line.substringAfter(':').substringBefore(',').toDoubleOrNull() ?: return unchanged("片段时长无法确认，未改动正片");if(!duration.isFinite()||duration<=0)return unchanged("片段时长异常，未改动正片")}
+                line.startsWith("#EXTINF:")->{if(ext>=0)return unchanged(tr(R.string.ui_0321));ext=i;duration=line.substringAfter(':').substringBefore(',').toDoubleOrNull() ?: return unchanged(tr(R.string.ui_0322));if(!duration.isFinite()||duration<=0)return unchanged(tr(R.string.ui_0323))}
                 line.isNotBlank()&&!line.startsWith('#')->{
-                    if(ext<0)return unchanged("存在无法对应的片段地址，未改动正片")
-                    val uri=runCatching{URI(baseUrl).resolve(line)}.getOrNull() ?: return unchanged("片段地址无法确认，未改动正片")
-                    if(uri.scheme !in listOf("https","http","file","asset"))return unchanged("片段协议暂不支持过滤")
+                    if(ext<0)return unchanged(tr(R.string.ui_0324))
+                    val uri=runCatching{URI(baseUrl).resolve(line)}.getOrNull() ?: return unchanged(tr(R.string.ui_0325))
+                    if(uri.scheme !in listOf("https","http","file","asset"))return unchanged(tr(R.string.ui_0326))
                     segments.add(Segment(segments.size,duration,time,previousUri+1,ext,i,uri.toString(),group));time+=duration;previousUri=i;ext=-1
                 }
             }
         }
-        if(ext>=0||segments.isEmpty())return unchanged("播放清单不完整，未改动正片")
-        if(cueStart!=null||invalidCue)return unchanged("广告起止标记不完整，未改动正片",time,discs)
+        if(ext>=0||segments.isEmpty())return unchanged(tr(R.string.ui_0327))
+        if(cueStart!=null||invalidCue)return unchanged(tr(R.string.ui_0328),time,discs)
         val blocks=segments.groupBy{it.group}.values.map{Block(it)}
         val selected=linkedMapOf<Int,String>()
         for(range in cueRanges){val seconds=range.sumOf{segments[it].duration};if(seconds in 0.1..180.0)range.forEach{selected[it]="paired-cue"}}
@@ -101,7 +101,7 @@ object HlsAdFilter {
         }
         if(selected.isEmpty())return unchanged(total=time,discs=discs,uncertain=if(discs>0)uncertain else 0)
         val removedTime=selected.keys.sumOf{segments[it].duration}
-        if(selected.size>=segments.size||removedTime/time>0.2||removedTime>600)return unchanged("疑似广告占比异常，已保留正片，建议换线路",time,discs,uncertain)
+        if(selected.size>=segments.size||removedTime/time>0.2||removedTime>600)return unchanged(tr(R.string.ui_0329),time,discs,uncertain)
         val keep=BooleanArray(lines.size){true};val inserts=mutableSetOf<Int>()
         for(index in selected.keys){val s=segments[index];for(i in s.fromLine..s.uriLine){if(globalTags.none{lines[i].startsWith(it)})keep[i]=false}}
         var previousKept:Int?=null

@@ -46,9 +46,9 @@ class FollowManager(private val context:Context,private val repo:ContentReposito
                     val old=store.followState(entry.key)
                     if(!force&&old!=null&&System.currentTimeMillis()-old.checked<6*60*60*1000L){skipped++;continue}
                     try{
-                        val source=sources[entry.sourceId]?.takeIf{it.enabled}?:error("内容源已停用或移除")
+                        val source=sources[entry.sourceId]?.takeIf{it.enabled}?:error(tr(R.string.ui_0307))
                         val detail=repo.detail(source,entry,force=true)
-                        require(detail.lines.isNotEmpty()&&detail.lines.any{it.chapters.isNotEmpty()}){"目录为空"}
+                        require(detail.lines.isNotEmpty()&&detail.lines.any{it.chapters.isNotEmpty()}){tr(R.string.ui_0308)}
                         store.transaction{
                             if(store.favorites().none{it.key==entry.key})return@transaction
                             val progress=store.progressFor(entry.key)
@@ -61,7 +61,7 @@ class FollowManager(private val context:Context,private val repo:ContentReposito
                         store.transaction{if(store.favorites().any{it.key==entry.key})store.putFollowState((store.followState(entry.key)?:FollowState(entry.key,emptyList())).copy(checked=System.currentTimeMillis(),error=ContentRepository.friendlyError(e)))}
                     }
                 }
-                "已检查 $success 部"+(if(failed>0)"，$failed 部暂时失败"else "")+(if(skipped>0)"，$skipped 部近期已检查"else "")
+                tr(R.string.ui_0309, success)+(if(failed>0)tr(R.string.ui_0310, failed)else "")+(if(skipped>0)tr(R.string.ui_0311, skipped)else "")
             }
         }
     }

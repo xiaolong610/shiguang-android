@@ -11,12 +11,12 @@ object BookPdf {
     fun read(context:Context,file:File,sink:BookStorage){
         PDFBoxResourceLoader.init(context)
         PDDocument.load(file,MemoryUsageSetting.setupTempFileOnly()).use{doc->
-            require(!doc.isEncrypted){"此PDF受密码或加密保护，请先取得未加密文件"}
+            require(!doc.isEncrypted){tr(R.string.ui_0065)}
             sink.bookTitle=doc.documentInformation.title.orEmpty();sink.author=doc.documentInformation.author.orEmpty()
-            require(doc.numberOfPages<=20000){"PDF页数过多，请分卷导入"}
+            require(doc.numberOfPages<=20000){tr(R.string.ui_0066)}
             val stripper=PDFTextStripper().apply{sortByPosition=true}
             for(page in 1..doc.numberOfPages){
-                stripper.startPage=page;stripper.endPage=page;sink.startChapter("第${page}页")
+                stripper.startPage=page;stripper.endPage=page;sink.startChapter(tr(R.string.ui_0067, page))
                 sink.paragraph(stripper.getText(doc))
             }
         }

@@ -15,8 +15,8 @@ object FicketRules {
     }
     fun validate(r:JSONObject) {
         val o=r.optJSONObject("original") ?: r
-        require(o.optString("homepageUrl").isNotBlank()||o.optString("bookSourceUrl").isNotBlank()){"Ficket规则缺少站点地址"}
-        require(o.has("searchResultRegex")||o.has("titleRegex")||o.has("ruleSearchList")||o.optString("searchResultFuncFromJson").contains("search_data")){"Ficket规则缺少搜索字段"}
+        require(o.optString("homepageUrl").isNotBlank()||o.optString("bookSourceUrl").isNotBlank()){tr(R.string.ui_0288)}
+        require(o.has("searchResultRegex")||o.has("titleRegex")||o.has("ruleSearchList")||o.optString("searchResultFuncFromJson").contains("search_data")){tr(R.string.ui_0289)}
     }
     private fun abs(base:String,raw:String)=raw.trim().takeIf{it.isNotBlank()&&!it.startsWith('#')}?.let{ContentRepository.resolve(base,it)}?.takeIf{ContentRepository.isHttp(it)}.orEmpty()
     fun image(el:Element?,base:String):String {
@@ -31,7 +31,7 @@ object FicketRules {
         val charset=r.optString("searchUrlCharacterSet","UTF-8").ifBlank{"UTF-8"}
         val encoded=URLEncoder.encode(q,charset)
         val url=abs(s.url,r.optString("searchUrlPrefix").replace("{{searchKey}}",encoded))
-        require(url.isNotBlank()){"此源通过网页搜索表单查询"}
+        require(url.isNotBlank()){tr(R.string.ui_0290)}
         if(r.optString("method").equals("post",true)) {
             val form=JSONObject(r.optString("formData","{}").ifBlank{"{}"})
             val body=form.keys().asSequence().joinToString("&"){URLEncoder.encode(it,charset)+"="+URLEncoder.encode(form.get(it).toString().replace("{{searchKey}}",q),charset)}
@@ -43,7 +43,7 @@ object FicketRules {
         val r=original(s)
         if(format(s)=="comic-api")return apiSearch(s,raw,pageUrl)
         if(r.optString("searchResultFuncFromJson").contains("search_data")){
-            val data=JSONObject(raw).optJSONArray("search_data")?:error("搜索接口没有返回search_data")
+            val data=JSONObject(raw).optJSONArray("search_data")?:error(tr(R.string.ui_0291))
             return (0 until data.length()).mapNotNull{i->val item=data.getJSONObject(i);val id=item.optString("id");val name=item.optString("name");val url=abs(s.url,"$id/")
                 if(id.isBlank()||name.isBlank()||url.isBlank())null else Entry(SourceCodec.stableId(url),s.id,name,s.kind,url,abs(s.url,item.optString("imgs")))}
         }
@@ -81,41 +81,41 @@ object FicketRules {
         val out=selectors.flatMap{doc.select(it)}.map{abs(url,it.attr(if(it.tagName()=="option")"value" else "href"))}.filter{it.isNotBlank()}.toMutableList()
         if(script.contains("totalPages")&&script.contains("index_")) {
             val n=Regex("/(\\d+)").find(doc.select("div.pages").text())?.groupValues?.get(1)?.toIntOrNull() ?: 1
-            require(n<=200){"目录分页过多（最多200页），为避免漏章已停止"}
+            require(n<=200){tr(R.string.ui_0292)}
             for(i in 2..n)out.add(abs(url.trimEnd('/')+"/","index_$i.html"))
         }
-        require(out.size<=200){"目录分页超过200页，为避免漏章已停止"}
+        require(out.size<=200){tr(R.string.ui_0293)}
         return out.filter{it!=url}.distinct()
     }
     fun detail(s:Source,e:Entry,pages:List<Pair<String,String>>):Detail {
         val r=original(s);val c=r.optJSONObject("chapterListRegex") ?: JSONObject()
         val selector=chapterSelector(s)
-        require(selector.isNotBlank()){"此规则缺少目录选择器"}
+        require(selector.isNotBlank()){tr(R.string.ui_0294)}
         val chapters=pages.flatMap{(url,raw)->Jsoup.parse(raw,url).select(selector).mapNotNull {el->
-            val href=abs(url,el.attr("href"));if(href.isBlank())null else Chapter(el.text().ifBlank{el.attr("title")}.ifBlank{"章节"},href)
+            val href=abs(url,el.attr("href"));if(href.isBlank())null else Chapter(el.text().ifBlank{el.attr("title")}.ifBlank{tr(R.string.ui_0244)},href)
         }}.distinctBy{it.url}
-        require(chapters.isNotEmpty()){"未提取到目录：站点改版、关闭或需要网页验证"}
-        require(chapters.size<=30000){"目录超过30000章，未截断导入"}
+        require(chapters.isNotEmpty()){tr(R.string.ui_0296)}
+        require(chapters.size<=30000){tr(R.string.ui_0297)}
         if(s.kind==Kind.VIDEO) {
             val doc=Jsoup.parse(pages.first().second,pages.first().first)
             val groups=doc.select(r.optString("playlistContainerRegex"))
             val labels=r.optString("playlistLabelRegex").takeIf{it.isNotBlank()}?.let{doc.select(it)}
             val lines=groups.mapIndexedNotNull{i,g->
-                val ch=g.select(r.optString("playlistItemRegex")).mapNotNull{el->abs(pages.first().first,el.attr("href")).takeIf{it.isNotBlank()}?.let{Chapter(el.text().ifBlank{"播放"},it)}}.distinctBy{it.url}
-                ch.takeIf{it.isNotEmpty()}?.let{Line(labels?.getOrNull(i)?.text().orEmpty().ifBlank{"线路 ${i+1}"},it)}
+                val ch=g.select(r.optString("playlistItemRegex")).mapNotNull{el->abs(pages.first().first,el.attr("href")).takeIf{it.isNotBlank()}?.let{Chapter(el.text().ifBlank{tr(R.string.ui_0241)},it)}}.distinctBy{it.url}
+                ch.takeIf{it.isNotEmpty()}?.let{Line(labels?.getOrNull(i)?.text().orEmpty().ifBlank{tr(R.string.ui_0299, i+1)},it)}
             }
             if(lines.isNotEmpty())return Detail(e,lines)
         }
         val reverse=c.optBoolean("listReverse")||c.optBoolean("chapterListReverse")
-        return Detail(e,listOf(Line("章节",if(reverse)chapters.reversed() else chapters)))
+        return Detail(e,listOf(Line(tr(R.string.ui_0244),if(reverse)chapters.reversed() else chapters)))
     }
     fun novelPage(s:Source,html:String,url:String):PageContent {
         val r=original(s).getJSONObject("contentRegex");val doc=Jsoup.parse(html,url);val body=doc.select(r.getString("content"))
-        require(body.isNotEmpty()){"未提取到章节正文：检查规则或网站状态"}
+        require(body.isNotEmpty()){tr(R.string.ui_0301)}
         body.select("script,style,iframe,button,nav,advertisement").remove()
         body.select("br").forEach{it.before("\\n")};body.select("p,div").forEach{it.prepend("\\n")}
         val text=body.text().replace("\\n","\n").split('\n').map{it.trim()}.filter{it.isNotBlank()}.joinToString("\n\n")
-        require(text.isNotBlank()){"章节正文为空"};return PageContent(text=text)
+        require(text.isNotBlank()){tr(R.string.ui_0248)};return PageContent(text=text)
     }
     fun comicImages(s:Source,html:String,url:String):List<String> {
         val r=original(s);val expression=r.optString("comicImageUrlListsRegex")
@@ -124,7 +124,7 @@ object FicketRules {
         if(expression.contains("getImgs(url)")&&expression.contains("totalPages")) {
             val first=image(doc.selectFirst("body > table > tbody > tr:nth-child(3) > td > table > tbody > tr > td > a > img"),url)
             val n=doc.select("body > table > tbody > tr:nth-child(4) > td > a").mapNotNull{it.text().toIntOrNull()}.maxOrNull() ?: 0
-            require(n in 1..1000&&!first.isBlank()){"漫画页数或首图不可用"}
+            require(n in 1..1000&&!first.isBlank()){tr(R.string.ui_0303)}
             return (1..n).map{first.replace(Regex("/\\d+\\.jpg$"),"/${it.toString().padStart(3,'0')}.jpg")}
         }
         val selector=if(expression.startsWith("capture$"))expression.substringAfter('$').substringAfter('$') else expression
@@ -201,10 +201,10 @@ object FicketRules {
         val chapters=nodes.mapNotNull{node->
             val name=if(isJson)scalar(node,r.getString("ruleChapterName")) else htmlValues(node as Element,r.getString("ruleChapterName")).firstOrNull().orEmpty()
             val target=if(isJson)render(r.getString("ruleContentUrl"),node,vars) else htmlValues(node as Element,r.getString("ruleContentUrl")).firstOrNull().orEmpty()
-            abs(e.url,target).takeIf{it.isNotBlank()}?.let{Chapter(name.ifBlank{"章节"},it)}
+            abs(e.url,target).takeIf{it.isNotBlank()}?.let{Chapter(name.ifBlank{tr(R.string.ui_0244)},it)}
         }.distinctBy{it.url}
-        require(chapters.isNotEmpty()){"接口未提供可读取的章节（可能改版、登录或付费限制）"}
-        return Detail(e,listOf(Line("章节",chapters)))
+        require(chapters.isNotEmpty()){tr(R.string.ui_0305)}
+        return Detail(e,listOf(Line(tr(R.string.ui_0244),chapters)))
     }
     fun apiImages(s:Source,raw:String,url:String):List<String> {
         val r=original(s);val rule=r.getString("ruleBookContent")

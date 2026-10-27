@@ -25,12 +25,12 @@ data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val
     if(entry.sourceId==LocalNovels.source.id||entry.sourceId.startsWith("demo-")||entry.sourceId=="direct-video")return
     var open by remember(entry.key){mutableStateOf(false)};val switchScope=rememberCoroutineScope();var switchError by remember{mutableStateOf<String?>(null)}
     TextButton(onClick={open=true},contentPadding=PaddingValues(horizontal=0.dp)){
-        Icon(Icons.Outlined.SwapHoriz,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text("查找其他来源 / 换源",fontSize=12.sp)
+        Icon(Icons.Outlined.SwapHoriz,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(tr(R.string.ui_0685),fontSize=12.sp)
     }
     if(open)SourceSwitchSheet(model,entry,detail,onDismiss={open=false}){result->
         switchScope.launch{try{model.applySourceSwitch(entry,result).await();open=false;onSwitched(result.detail.entry);onContinue(result)}catch(e:CancellationException){throw e}catch(e:Exception){switchError=ContentRepository.friendlyError(e)}}
     }
-    switchError?.let{AlertDialog(onDismissRequest={switchError=null},title={Text("换源未完成")},text={Text(it)},confirmButton={TextButton(onClick={switchError=null}){Text("知道了")}})}
+    switchError?.let{AlertDialog(onDismissRequest={switchError=null},title={Text(tr(R.string.ui_0740))},text={Text(it)},confirmButton={TextButton(onClick={switchError=null}){Text(tr(R.string.ui_0114))}})}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,28 +58,28 @@ data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val
             withTimeoutOrNull(20_000){model.repo.searchUpdates(batch,entry.kind,query.trim(),onOutcome={outcome->try{withContext(Dispatchers.IO){LibraryStore(model.getApplication()).use{it.recordSearch(outcome)}}}catch(e:CancellationException){throw e}catch(_:Exception){}}).collect{update->
                 checked=checked+update.outcomes.map{it.source.id};failed=failed+update.outcomes.filter{it.error!=null}.map{it.source.id}
                 candidates=SearchText.rank((candidates+update.entries).distinctBy{it.key},query).sortedByDescending{WorkIdentity.same(entry,it)}
-                message="已检查 ${checked.size} / ${sources.size} 个源"+(if(failed.isNotEmpty())" · ${failed.size} 个未能加载"else "")
+                message=tr(R.string.ui_0038, checked.size, sources.size)+(if(failed.isNotEmpty())tr(R.string.ui_0743, failed.size)else "")
             }}
-            if(candidates.isEmpty())message="没有找到其他来源，可修改关键词后重试。"
-            if(checked.size<sources.size)message+=" 还可继续查找 ${sources.size-checked.size} 个源。"
+            if(candidates.isEmpty())message=tr(R.string.ui_0744)
+            if(checked.size<sources.size)message+=tr(R.string.ui_0745, sources.size-checked.size)
         }catch(e:CancellationException){throw e}catch(e:Exception){error=ContentRepository.friendlyError(e)}finally{busy=false}}
     }
     LaunchedEffect(entry.key){if(candidates.isEmpty())search()}
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
         Column(Modifier.fillMaxWidth().heightIn(max=620.dp).navigationBarsPadding().padding(horizontal=20.dp)){
-            Text(if(target==null)"其他来源"else"确认换源位置",fontSize=21.sp,fontWeight=FontWeight.SemiBold)
+            Text(if(target==null)tr(R.string.ui_0746)else tr(R.string.ui_0747),fontSize=21.sp,fontWeight=FontWeight.SemiBold)
             if(target==null){
-                Row(verticalAlignment=Alignment.CenterVertically){OutlinedTextField(query,{query=it},singleLine=true,modifier=Modifier.weight(1f),label={Text("作品名称")},enabled=!busy);TextButton(onClick={search()},enabled=!busy&&query.isNotBlank()){Text(if(checked.isNotEmpty()&&searchedQuery==query&&checked.size<sources.size)"继续查找"else"搜索")}}
-                Text("仅搜索已启用的同类源。请核对季数、年份和版本。",fontSize=11.sp,modifier=Modifier.padding(vertical=8.dp))
+                Row(verticalAlignment=Alignment.CenterVertically){OutlinedTextField(query,{query=it},singleLine=true,modifier=Modifier.weight(1f),label={Text(tr(R.string.ui_0748))},enabled=!busy);TextButton(onClick={search()},enabled=!busy&&query.isNotBlank()){Text(if(checked.isNotEmpty()&&searchedQuery==query&&checked.size<sources.size)tr(R.string.ui_0749)else tr(R.string.ui_0089))}}
+                Text(tr(R.string.ui_0751),fontSize=11.sp,modifier=Modifier.padding(vertical=8.dp))
                 if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(message.ifBlank{if(sources.isEmpty())"请先启用其他同类内容源。"else"可选择已有结果，或搜索其他来源。"},fontSize=11.sp)
+                Text(message.ifBlank{if(sources.isEmpty())tr(R.string.ui_0752)else tr(R.string.ui_0753)},fontSize=11.sp)
                 error?.let{Text(it,fontSize=12.sp,color=MaterialTheme.colorScheme.error)}
                 LazyColumn(Modifier.weight(1f,false),contentPadding=PaddingValues(bottom=20.dp)){
                     items(candidates,key={it.key}){candidate->
-                        ListItem(headlineContent={Text(candidate.title,fontSize=14.sp)},supportingContent={Text(model.source(candidate.sourceId)?.name?:"源已移除",fontSize=11.sp)},trailingContent={if(loadingKey==candidate.key)CircularProgressIndicator(Modifier.size(20.dp))},modifier=Modifier.clickable(enabled=loadingKey==null){
+                        ListItem(headlineContent={Text(candidate.title,fontSize=14.sp)},supportingContent={Text(model.source(candidate.sourceId)?.name?:tr(R.string.ui_0396),fontSize=11.sp)},trailingContent={if(loadingKey==candidate.key)CircularProgressIndicator(Modifier.size(20.dp))},modifier=Modifier.clickable(enabled=loadingKey==null){
                             searchJob?.cancel();busy=false;loadingKey=candidate.key;error=null;scope.launch{try{
-                                val d=model.repo.detail(model.source(candidate.sourceId)?.takeIf{it.enabled}?:error("源已停用或移除"),candidate)
-                                require(d.lines.isNotEmpty()&&d.lines.all{it.chapters.isNotEmpty()}){"此来源未找到可用目录"}
+                                val d=model.repo.detail(model.source(candidate.sourceId)?.takeIf{it.enabled}?:error(tr(R.string.ui_0755)),candidate)
+                                require(d.lines.isNotEmpty()&&d.lines.all{it.chapters.isNotEmpty()}){tr(R.string.ui_0756)}
                                 targetLine=0;chapter=ChapterIdentity.match(previousTitle,d.lines[0].chapters,entry.kind)?:0;target=d
                             }catch(e:CancellationException){throw e}catch(e:Exception){error=ContentRepository.friendlyError(e)}finally{loadingKey=null}}
                         })
@@ -90,17 +90,17 @@ data class SourceSwitchResult(val detail:Detail,val line:Int,val chapter:Int,val
                 val matched=ChapterIdentity.match(previousTitle,chapters,entry.kind)
                 val carryTime=entry.kind==Kind.VIDEO&&previous!=null&&matched==chapter
                 Text("${d.entry.title} · ${model.source(d.entry.sourceId)?.name.orEmpty()}",fontSize=13.sp,modifier=Modifier.padding(vertical=10.dp))
-                Text(if(previous==null)"选择开始的章节或集数。"else if(matched==null)"未能可靠匹配“$previousTitle”，请手动选择位置。"else"已匹配“${chapters[matched].title}”，可手动调整。",fontSize=12.sp)
-                if(carryTime)Text("将沿用同集时间位置；不同剪辑可能需要调整。",fontSize=11.sp)
-                if(entry.kind!=Kind.VIDEO&&previous!=null)Text("换源后从所选章节开头开始，原源阅读记录保留。",fontSize=11.sp)
-                if(model.favorites.any{it.key==entry.key})Text("书架收藏将改为这个来源。",fontSize=11.sp)
+                Text(if(previous==null)tr(R.string.ui_0757)else if(matched==null)tr(R.string.ui_0758, previousTitle)else tr(R.string.ui_0759, chapters[matched].title),fontSize=12.sp)
+                if(carryTime)Text(tr(R.string.ui_0760),fontSize=11.sp)
+                if(entry.kind!=Kind.VIDEO&&previous!=null)Text(tr(R.string.ui_0761),fontSize=11.sp)
+                if(model.favorites.any{it.key==entry.key})Text(tr(R.string.ui_0762),fontSize=11.sp)
                 if(d.lines.size>1)ScrollableTabRow(targetLine,edgePadding=0.dp){d.lines.forEachIndexed{i,l->Tab(selected=i==targetLine,onClick={targetLine=i;chapter=ChapterIdentity.match(previousTitle,l.chapters,entry.kind)?:0},text={Text(l.name)})}}
                 LazyColumn(Modifier.weight(1f,false),contentPadding=PaddingValues(vertical=8.dp)){
                     items(chapters.indices.toList(),key={it}){i->Row(Modifier.fillMaxWidth().clickable{chapter=i}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically){RadioButton(chapter==i,{chapter=i});Text(chapters[i].title,fontSize=13.sp,modifier=Modifier.weight(1f))}}
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom=16.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                    TextButton(onClick={target=null}){Text("返回来源")}
-                    Button(onClick={onSwitch(SourceSwitchResult(d,targetLine,chapter,if(carryTime)previous!!.offset else 0L))},modifier=Modifier.weight(1f)){Text("换源并继续")}
+                    TextButton(onClick={target=null}){Text(tr(R.string.ui_0763))}
+                    Button(onClick={onSwitch(SourceSwitchResult(d,targetLine,chapter,if(carryTime)previous!!.offset else 0L))},modifier=Modifier.weight(1f)){Text(tr(R.string.ui_0764))}
                 }
             }
         }

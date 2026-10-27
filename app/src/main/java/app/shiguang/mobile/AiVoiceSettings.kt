@@ -24,7 +24,7 @@ class AiVoiceSettings(context:Context) {
         config.validate()
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply{init(Cipher.ENCRYPT_MODE,key())}
         val token=Base64.encodeToString(cipher.iv,Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(config.token.toByteArray()),Base64.NO_WRAP)
-        check(prefs.edit().putString("url",config.url).putString("token",token).putString("style",config.style).putString("voice",config.voice).putString("revision",config.revision).commit()){"无法保存语音服务配对"}
+        check(prefs.edit().putString("url",config.url).putString("token",token).putString("style",config.style).putString("voice",config.voice).putString("revision",config.revision).commit()){tr(R.string.ui_0028)}
     }
     fun load():AiVoiceConfig? = runCatching{
         val parts=(prefs.getString("token",null)?:return null).split(':');require(parts.size==2)

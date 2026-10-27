@@ -69,7 +69,7 @@ fun measuredPageRanges(textLength:Int,lineEnds:List<Int>,lineTops:List<Float>,li
             positionCallback(item,pixels,p+1,ranges.size)
         }}
         HorizontalPager(state=pager,userScrollEnabled=mode==NovelTurnMode.SLIDE,modifier=Modifier.fillMaxSize().semantics{
-            contentDescription="小说分页阅读区";customActions=listOf(CustomAccessibilityAction("上一页"){turn(false);true},CustomAccessibilityAction("下一页"){turn(true);true})
+            contentDescription=tr(R.string.ui_0644);customActions=listOf(CustomAccessibilityAction(tr(R.string.ui_0645)){turn(false);true},CustomAccessibilityAction(tr(R.string.ui_0646)){turn(true);true})
         }){p->val range=ranges[p]
             Box(Modifier.fillMaxSize().pointerInput(mode,p){detectTapGestures(onTap={point->when{point.x<size.width*.3f->turn(false);point.x>size.width*.7f->turn(true);else->onMenu()}})}){
                 Text(text.subSequence(range.first,(range.last+1).coerceAtLeast(range.first)),style=style,modifier=Modifier.fillMaxWidth())

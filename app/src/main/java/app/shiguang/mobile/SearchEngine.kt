@@ -52,7 +52,7 @@ class SearchEngine(private val normalSlots:Semaphore=networkSlots,private val pa
             (if(dynamic)pageSlots else normalSlots).withPermit{
                 val start=System.nanoTime()
                 val outcome=try{val entries=withTimeout(if(dynamic)dynamicTimeoutMs else timeoutMs){withContext(SearchTraffic){loader(s,query)}};SearchOutcome(s,entries,elapsedMs=(System.nanoTime()-start)/1_000_000)}
-                catch(e:TimeoutCancellationException){currentCoroutineContext().ensureActive();SearchOutcome(s,emptyList(),"响应超时，已跳过",(System.nanoTime()-start)/1_000_000)}
+                catch(e:TimeoutCancellationException){currentCoroutineContext().ensureActive();SearchOutcome(s,emptyList(),tr(R.string.ui_0717),(System.nanoTime()-start)/1_000_000)}
                 catch(e:CancellationException){throw e}
                 catch(e:Exception){SearchOutcome(s,emptyList(),ContentRepository.friendlyError(e),(System.nanoTime()-start)/1_000_000)}
                 onOutcome(outcome)
